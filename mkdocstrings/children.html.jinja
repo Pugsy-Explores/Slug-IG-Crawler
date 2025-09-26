@@ -1,0 +1,11 @@
+{% for child in children %}
+  {% if child.kind.value == "function" %}
+    <details class="method">
+      <summary>{{ child.name }}</summary>
+      {{ render(child) }}
+    </details>
+  {% else %}
+    {{ render(child) }}
+  {% endif %}
+{% endfor %}
+

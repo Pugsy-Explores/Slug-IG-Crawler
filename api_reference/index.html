@@ -26,6 +26,9 @@
     
       <link rel="stylesheet" href="../assets/stylesheets/main.e53b48f4.min.css">
       
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
       
 
 
@@ -55,7 +58,14 @@
   </head>
   
   
-    <body dir="ltr">
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
   
     
     <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
@@ -106,6 +116,28 @@
         </div>
       </div>
     </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
     
     
       <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
@@ -176,7 +208,9 @@
 
 
 
-<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
     <a href=".." title="IG Data Scraper" class="md-nav__button md-logo" aria-label="IG Data Scraper" data-md-component="logo">
       
@@ -1081,788 +1115,6 @@
                 </div>
               </div>
             
-            
-              
-              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
-                <div class="md-sidebar__scrollwrap">
-                  <div class="md-sidebar__inner">
-                    
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.cli" class="md-nav__link">
-    <span class="md-ellipsis">
-      cli
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.cli.main" class="md-nav__link">
-    <span class="md-ellipsis">
-      main
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.pipeline.Pipeline" class="md-nav__link">
-    <span class="md-ellipsis">
-      Pipeline
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.pipeline.Pipeline.__init__" class="md-nav__link">
-    <span class="md-ellipsis">
-      __init__
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.pipeline.Pipeline.run" class="md-nav__link">
-    <span class="md-ellipsis">
-      run
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.config" class="md-nav__link">
-    <span class="md-ellipsis">
-      config
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.config.CeleryConfig" class="md-nav__link">
-    <span class="md-ellipsis">
-      CeleryConfig
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.config.Config" class="md-nav__link">
-    <span class="md-ellipsis">
-      Config
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.config.DataConfig" class="md-nav__link">
-    <span class="md-ellipsis">
-      DataConfig
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.config.LoggingConfig" class="md-nav__link">
-    <span class="md-ellipsis">
-      LoggingConfig
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.config.MainConfig" class="md-nav__link">
-    <span class="md-ellipsis">
-      MainConfig
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.config.ProfileTarget" class="md-nav__link">
-    <span class="md-ellipsis">
-      ProfileTarget
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.config.expand_paths" class="md-nav__link">
-    <span class="md-ellipsis">
-      expand_paths
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.config.load_config" class="md-nav__link">
-    <span class="md-ellipsis">
-      load_config
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.config.resolve_path" class="md-nav__link">
-    <span class="md-ellipsis">
-      resolve_path
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.backends.selenium_backend.SeleniumBackend" class="md-nav__link">
-    <span class="md-ellipsis">
-      SeleniumBackend
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.backends.selenium_backend.SeleniumBackend.__init__" class="md-nav__link">
-    <span class="md-ellipsis">
-      __init__
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.backends.selenium_backend.SeleniumBackend.extract_comments" class="md-nav__link">
-    <span class="md-ellipsis">
-      extract_comments
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.backends.selenium_backend.SeleniumBackend.extract_post_metadata" class="md-nav__link">
-    <span class="md-ellipsis">
-      extract_post_metadata
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.backends.selenium_backend.SeleniumBackend.get_post_elements" class="md-nav__link">
-    <span class="md-ellipsis">
-      get_post_elements
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.backends.selenium_backend.SeleniumBackend.get_post_title_data" class="md-nav__link">
-    <span class="md-ellipsis">
-      get_post_title_data
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.backends.selenium_backend.SeleniumBackend.open_href_in_new_tab" class="md-nav__link">
-    <span class="md-ellipsis">
-      open_href_in_new_tab
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.backends.selenium_backend.SeleniumBackend.open_profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      open_profile
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.backends.selenium_backend.SeleniumBackend.scrape_posts_in_batches" class="md-nav__link">
-    <span class="md-ellipsis">
-      scrape_posts_in_batches
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.backends.selenium_backend.SeleniumBackend.start" class="md-nav__link">
-    <span class="md-ellipsis">
-      start
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.backends.selenium_backend.SeleniumBackend.stop" class="md-nav__link">
-    <span class="md-ellipsis">
-      stop
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.pages.base_page.BasePage" class="md-nav__link">
-    <span class="md-ellipsis">
-      BasePage
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.pages.profile_page.ProfilePage" class="md-nav__link">
-    <span class="md-ellipsis">
-      ProfilePage
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.pages.profile_page.ProfilePage.__init__" class="md-nav__link">
-    <span class="md-ellipsis">
-      __init__
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.pages.profile_page.ProfilePage.extract_comments" class="md-nav__link">
-    <span class="md-ellipsis">
-      extract_comments
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.pages.profile_page.ProfilePage.get_visible_post_elements" class="md-nav__link">
-    <span class="md-ellipsis">
-      get_visible_post_elements
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.pages.profile_page.ProfilePage.navigate_to_profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      navigate_to_profile
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.pages.profile_page.ProfilePage.open_post_element" class="md-nav__link">
-    <span class="md-ellipsis">
-      open_post_element
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.pages.profile_page.ProfilePage.scroll_and_collect_" class="md-nav__link">
-    <span class="md-ellipsis">
-      scroll_and_collect_
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.pages.profile_page.ProfilePage.wait_for_sections" class="md-nav__link">
-    <span class="md-ellipsis">
-      wait_for_sections
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils" class="md-nav__link">
-    <span class="md-ellipsis">
-      utils
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.capture_instagram_requests" class="md-nav__link">
-    <span class="md-ellipsis">
-      capture_instagram_requests
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.classify_mp4_files" class="md-nav__link">
-    <span class="md-ellipsis">
-      classify_mp4_files
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.cleanup_details" class="md-nav__link">
-    <span class="md-ellipsis">
-      cleanup_details
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.clear_tmp_file" class="md-nav__link">
-    <span class="md-ellipsis">
-      clear_tmp_file
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.combine_audio_video" class="md-nav__link">
-    <span class="md-ellipsis">
-      combine_audio_video
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.decode_body" class="md-nav__link">
-    <span class="md-ellipsis">
-      decode_body
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.discover_total_size" class="md-nav__link">
-    <span class="md-ellipsis">
-      discover_total_size
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.extract_graphql_data_keys" class="md-nav__link">
-    <span class="md-ellipsis">
-      extract_graphql_data_keys
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.extract_post_title_details" class="md-nav__link">
-    <span class="md-ellipsis">
-      extract_post_title_details
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.fetch_with_ranges" class="md-nav__link">
-    <span class="md-ellipsis">
-      fetch_with_ranges
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.find_audio_for_videos" class="md-nav__link">
-    <span class="md-ellipsis">
-      find_audio_for_videos
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.find_comment_container" class="md-nav__link">
-    <span class="md-ellipsis">
-      find_comment_container
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.generate_ranges" class="md-nav__link">
-    <span class="md-ellipsis">
-      generate_ranges
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.get_all_post_images_data" class="md-nav__link">
-    <span class="md-ellipsis">
-      get_all_post_images_data
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.get_all_post_images_data_gpt" class="md-nav__link">
-    <span class="md-ellipsis">
-      get_all_post_images_data_gpt
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.get_all_video_srcs_gpt" class="md-nav__link">
-    <span class="md-ellipsis">
-      get_all_video_srcs_gpt
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.get_first_img_attributes_in_div" class="md-nav__link">
-    <span class="md-ellipsis">
-      get_first_img_attributes_in_div
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.get_first_img_attributes_in_div_gpt" class="md-nav__link">
-    <span class="md-ellipsis">
-      get_first_img_attributes_in_div_gpt
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.get_first_link_href_base" class="md-nav__link">
-    <span class="md-ellipsis">
-      get_first_link_href_base
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.get_instagram_post_images" class="md-nav__link">
-    <span class="md-ellipsis">
-      get_instagram_post_images
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.get_section_with_highest_likes" class="md-nav__link">
-    <span class="md-ellipsis">
-      get_section_with_highest_likes
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.get_shortcode_web_info" class="md-nav__link">
-    <span class="md-ellipsis">
-      get_shortcode_web_info
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.get_top_mp4_groups_with_curl_gpt" class="md-nav__link">
-    <span class="md-ellipsis">
-      get_top_mp4_groups_with_curl_gpt
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.human_like_click" class="md-nav__link">
-    <span class="md-ellipsis">
-      human_like_click
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.human_like_click_gpt" class="md-nav__link">
-    <span class="md-ellipsis">
-      human_like_click_gpt
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.human_mouse_move" class="md-nav__link">
-    <span class="md-ellipsis">
-      human_mouse_move
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.human_scroll" class="md-nav__link">
-    <span class="md-ellipsis">
-      human_scroll
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.list_logged_urls" class="md-nav__link">
-    <span class="md-ellipsis">
-      list_logged_urls
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.media_from_post" class="md-nav__link">
-    <span class="md-ellipsis">
-      media_from_post
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.media_from_post_gpt" class="md-nav__link">
-    <span class="md-ellipsis">
-      media_from_post_gpt
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.normalize_hashtags" class="md-nav__link">
-    <span class="md-ellipsis">
-      normalize_hashtags
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.parse_graphql_responses" class="md-nav__link">
-    <span class="md-ellipsis">
-      parse_graphql_responses
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.random_delay" class="md-nav__link">
-    <span class="md-ellipsis">
-      random_delay
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.save_intermediate" class="md-nav__link">
-    <span class="md-ellipsis">
-      save_intermediate
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.save_scrape_results" class="md-nav__link">
-    <span class="md-ellipsis">
-      save_scrape_results
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.scrape_carousel_images" class="md-nav__link">
-    <span class="md-ellipsis">
-      scrape_carousel_images
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.scrape_carousel_images_gpt" class="md-nav__link">
-    <span class="md-ellipsis">
-      scrape_carousel_images_gpt
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.scrape_comments_with_gif" class="md-nav__link">
-    <span class="md-ellipsis">
-      scrape_comments_with_gif
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.scroll_with_mouse" class="md-nav__link">
-    <span class="md-ellipsis">
-      scroll_with_mouse
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.set_reel_volume" class="md-nav__link">
-    <span class="md-ellipsis">
-      set_reel_volume
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.unmute_if_muted" class="md-nav__link">
-    <span class="md-ellipsis">
-      unmute_if_muted
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.unmute_reel" class="md-nav__link">
-    <span class="md-ellipsis">
-      unmute_reel
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.write_and_run_curl_script" class="md-nav__link">
-    <span class="md-ellipsis">
-      write_and_run_curl_script
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.write_and_run_full_download_script" class="md-nav__link">
-    <span class="md-ellipsis">
-      write_and_run_full_download_script
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.utils.write_and_run_full_download_script_" class="md-nav__link">
-    <span class="md-ellipsis">
-      write_and_run_full_download_script_
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.logger" class="md-nav__link">
-    <span class="md-ellipsis">
-      logger
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.logger.configure_root_logger" class="md-nav__link">
-    <span class="md-ellipsis">
-      configure_root_logger
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#igscraper.logger.get_logger" class="md-nav__link">
-    <span class="md-ellipsis">
-      get_logger
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-                  </div>
-                </div>
-              </div>
             
           
           
@@ -14780,6 +14032,12 @@ Returns metadata dict. Optionally runs the script.</p>
 <script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
         </div>
         
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
       </main>
       
         <footer class="md-footer">
@@ -14808,7 +14066,7 @@ Returns metadata dict. Optionally runs the script.</p>
     
     
       
-      <script id="__config" type="application/json">{"base": "..", "features": [], "search": "../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"base": "..", "features": ["navigation.instant", "navigation.sections", "navigation.expand", "navigation.indexes", "navigation.top", "navigation.tracking", "toc.integrate", "content.code.copy", "content.code.annotate", "content.code.select"], "search": "../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
       <script src="../assets/javascripts/bundle.f55a23d4.min.js"></script>
