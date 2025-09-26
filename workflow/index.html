@@ -1,0 +1,812 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../api_reference/">
+      
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.20">
+    
+    
+      
+        <title>Workflow Guide - IG Data Scraper</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.e53b48f4.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#full-workflow-explained" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="IG Data Scraper" class="md-header__button md-logo" aria-label="IG Data Scraper" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            IG Data Scraper
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Workflow Guide
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="IG Data Scraper" class="md-nav__button md-logo" aria-label="IG Data Scraper" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    IG Data Scraper
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../developer_guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Developer Guide
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api_reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    API Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Workflow Guide
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    Workflow Guide
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-initialization-environment-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Initialization &amp; Environment Setup
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-browser-start-up-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Browser Start-up &amp; Login
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-target-selection-url-collection" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Target Selection &amp; URL Collection
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Target Selection &amp; URL Collection">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#profile-mode-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      Profile Mode Workflow
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-batch-scraping" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Batch Scraping
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-single-post-scraping" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Single Post Scraping
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-saving-results-teardown" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. Saving Results &amp; Teardown
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#main-modules-classes-and-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Main Modules, Classes, and Functions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#python-selenium-and-javascript-interaction" class="md-nav__link">
+    <span class="md-ellipsis">
+      Python, Selenium, and JavaScript Interaction
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#assumptions-in-scraping-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      Assumptions in Scraping Logic
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-handling-retries-and-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      Error Handling, Retries, and Logging
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-initialization-environment-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Initialization &amp; Environment Setup
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-browser-start-up-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Browser Start-up &amp; Login
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-target-selection-url-collection" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Target Selection &amp; URL Collection
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Target Selection &amp; URL Collection">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#profile-mode-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      Profile Mode Workflow
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-batch-scraping" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Batch Scraping
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-single-post-scraping" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Single Post Scraping
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-saving-results-teardown" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. Saving Results &amp; Teardown
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#main-modules-classes-and-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Main Modules, Classes, and Functions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#python-selenium-and-javascript-interaction" class="md-nav__link">
+    <span class="md-ellipsis">
+      Python, Selenium, and JavaScript Interaction
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#assumptions-in-scraping-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      Assumptions in Scraping Logic
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-handling-retries-and-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      Error Handling, Retries, and Logging
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="full-workflow-explained">Full Workflow Explained</h1>
+<p>This document describes the end-to-end scraping workflow for the Instagram profile scraper. The process is orchestrated via a command-line interface and follows a modular pipeline, leveraging Selenium for browser automation and JavaScript injection for efficient data extraction.</p>
+<hr />
+<h2 id="1-initialization-environment-setup">1. Initialization &amp; Environment Setup</h2>
+<ul>
+<li><strong>Start Command:</strong><br />
+    The primary entry point is the <code>run_scraper.sh</code> script.
+    <code>bash
+    ./run_scraper.sh</code></li>
+<li><strong>Script Workflow:</strong><ol>
+<li><strong>Environment Setup:</strong> Activates the Python virtual environment and sets the <code>PYTHONPATH</code>.</li>
+<li><strong>Redis Check:</strong> Checks if a Redis server is running. If not, it attempts to start one using <code>brew</code> or <code>docker</code>. Redis is used as the Celery message broker for background tasks.</li>
+<li><strong>Celery Worker:</strong> Checks if a Celery worker is already running. If not, it starts one in the background. The worker's role is to handle asynchronous tasks, specifically video downloads, offloading them from the main scraping process.</li>
+<li><strong>Scraper Execution:</strong> Executes the main Python scraper script:
+    <code>bash
+    python -m igscraper.cli --config config.toml</code></li>
+</ol>
+</li>
+<li><strong>Python Application Initialization:</strong><ul>
+<li>The <code>main()</code> function in <code>cli.py</code> is called, which parses arguments and instantiates the <code>Pipeline</code> class.</li>
+<li>The <code>Pipeline</code> class loads and validates <code>config.toml</code> using Pydantic models from <code>config.py</code>.</li>
+<li>It then initializes the <code>SeleniumBackend</code>.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="2-browser-start-up-login">2. Browser Start-up &amp; Login</h2>
+<ul>
+<li><code>Pipeline.run()</code> calls <code>self.backend.start()</code>.</li>
+<li><code>SeleniumBackend.start()</code>:<ul>
+<li>Configures and launches Chrome with anti-detection settings (e.g., disables automation flags, sets user-agent).</li>
+<li>Navigates to <code>instagram.com</code>.</li>
+<li>Authenticates using cookies from the config (<code>_login_with_cookies</code>), bypassing manual login.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="3-target-selection-url-collection">3. Target Selection &amp; URL Collection</h2>
+<ul>
+<li><strong>Modes:</strong><ul>
+<li><strong>Profile Mode:</strong> Scrapes a list of profiles.</li>
+<li><strong>URL File Mode:</strong> Scrapes a predefined list of post URLs.</li>
+</ul>
+</li>
+</ul>
+<h3 id="profile-mode-workflow">Profile Mode Workflow</h3>
+<ol>
+<li>Iterate through each <code>target_profile</code> in config.</li>
+<li>For each profile:<ul>
+<li><code>backend.open_profile()</code> navigates to the profile page.</li>
+<li><code>backend.get_post_elements()</code>:<ul>
+<li>Checks for cached post URLs (<code>posts_{target_profile}.txt</code>).</li>
+<li>If no cache, calls <code>ProfilePage.scroll_and_collect_()</code> to simulate scrolling and collect post URLs up to the configured limit.</li>
+<li>Saves URLs to cache.</li>
+</ul>
+</li>
+<li>Filters out already-scraped URLs by checking <code>metadata_{target_profile}.jsonl</code>.</li>
+</ul>
+</li>
+</ol>
+<hr />
+<h2 id="4-batch-scraping">4. Batch Scraping</h2>
+<ul>
+<li>Passes URLs to <code>backend.scrape_posts_in_batches()</code>.</li>
+<li>Opens <code>batch_size</code> posts in new browser tabs (<code>window.open()</code>).</li>
+<li>Iterates through tabs to scrape content.</li>
+</ul>
+<hr />
+<h2 id="5-single-post-scraping">5. Single Post Scraping</h2>
+<ul>
+<li><code>_scrape_and_close_tab()</code> in <code>SeleniumBackend</code>:<ul>
+<li>Switches to post tab.</li>
+<li>Extracts data (each step wrapped in <code>try...except</code>):<ul>
+<li><strong>Title/Caption:</strong> <code>get_post_title_data()</code></li>
+<li><strong>Media:</strong> <code>media_from_post_gpt()</code> (handles images, carousels, videos; uses network requests for downloadable videos)</li>
+<li><strong>Video Downloads:</strong> Dispatches Celery task (<code>write_and_run_full_download_script_</code>)</li>
+<li><strong>Likes:</strong> <code>get_section_with_highest_likes()</code></li>
+<li><strong>Comments:</strong> <code>scrape_comments_with_gif()</code> (scrolls comment container, injects JS to parse comments and GIFs)</li>
+</ul>
+</li>
+<li>Closes tab and returns focus to main window.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="6-saving-results-teardown">6. Saving Results &amp; Teardown</h2>
+<ul>
+<li>After each post:<ul>
+<li>Appends data to temp file (<code>scrape_results_tmp_{...}.jsonl</code>) via <code>save_intermediate()</code>.</li>
+</ul>
+</li>
+<li>After every <code>save_every</code> posts:<ul>
+<li>Moves data to final output files (<code>metadata_{...}.jsonl</code>, <code>skipped_{...}.txt</code>).</li>
+<li>Clears temp file.</li>
+</ul>
+</li>
+<li>After all batches:<ul>
+<li><code>Pipeline.run()</code> calls <code>backend.stop()</code> to quit browser and close WebDriver.</li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="main-modules-classes-and-functions">Main Modules, Classes, and Functions</h2>
+<table>
+<thead>
+<tr>
+<th>Module/Class</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>igscraper.cli</code></td>
+<td>CLI entry point; parses arguments</td>
+</tr>
+<tr>
+<td><code>igscraper.pipeline.Pipeline</code></td>
+<td>Orchestrates workflow; manages backend and targets</td>
+</tr>
+<tr>
+<td><code>igscraper.config</code></td>
+<td>Pydantic models for config; path expansion</td>
+</tr>
+<tr>
+<td><code>igscraper.backends.selenium_backend.SeleniumBackend</code></td>
+<td>Core scraping logic; browser actions; data extraction loop</td>
+</tr>
+<tr>
+<td><code>igscraper.pages.profile_page.ProfilePage</code></td>
+<td>Page Object Model for profile page; scrolling and URL collection</td>
+</tr>
+<tr>
+<td><code>igscraper.utils</code></td>
+<td>Helper functions (data extraction, human simulation, persistence)</td>
+</tr>
+<tr>
+<td><code>igscraper.logger</code></td>
+<td>Logging to console and file</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key Functions:</strong>
+- Data Extraction: <code>get_post_title_data</code>, <code>media_from_post_gpt</code>, <code>scrape_comments_with_gif</code>
+- Human Simulation: <code>human_scroll</code>, <code>human_mouse_move</code>, <code>random_delay</code>
+- Data Persistence: <code>save_scrape_results</code>, <code>save_intermediate</code></p>
+<hr />
+<h2 id="python-selenium-and-javascript-interaction">Python, Selenium, and JavaScript Interaction</h2>
+<ul>
+<li><strong>Python:</strong> Orchestrates logic, configuration, file handling.</li>
+<li><strong>Selenium:</strong> Automates browser actions (navigation, clicking, tab management).</li>
+<li><strong>JavaScript:</strong> Injected via <code>driver.execute_script()</code> for fast, robust DOM traversal and data extraction.</li>
+</ul>
+<p><strong>Benefits:</strong>
+- Efficient DOM parsing.
+- Handles complex/nested structures in one operation.
+- Accesses browser APIs (e.g., <code>performance.getEntriesByType("resource")</code> for video URLs).</p>
+<hr />
+<h2 id="assumptions-in-scraping-logic">Assumptions in Scraping Logic</h2>
+<ul>
+<li><strong>DOM Structure:</strong> Relies on current HTML/CSS selectors (fragile to Instagram updates).</li>
+<li><strong>Infinite Scroll:</strong> Assumes new content loads on scroll; detects end by unchanged <code>scrollHeight</code>.</li>
+<li><strong>Post URLs:</strong> Assumes <code>/p/</code> or <code>/reel/</code> patterns.</li>
+<li><strong>Network Requests:</strong> Assumes <code>.mp4</code> URLs are available in performance logs.</li>
+<li><strong>Authentication:</strong> Assumes cookies are sufficient for session; manual intervention may be needed.</li>
+</ul>
+<hr />
+<h2 id="error-handling-retries-and-logging">Error Handling, Retries, and Logging</h2>
+<ul>
+<li><strong>Error Handling:</strong>  <ul>
+<li>Broad <code>try...except</code> blocks prevent crashes.</li>
+<li>Skipped posts logged with reasons.</li>
+</ul>
+</li>
+<li><strong>Retries:</strong>  <ul>
+<li>Scrolling and tab opening have retry mechanisms for robustness.</li>
+</ul>
+</li>
+<li><strong>Logging:</strong>  <ul>
+<li>Logs to console and file (<code>scraper_log_{timestamp}.log</code>).</li>
+<li>Tracks progress, warnings, errors.</li>
+<li>Exception messages at ERROR level; full tracebacks at DEBUG level.</li>
+</ul>
+</li>
+</ul>
+<hr />
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "..", "features": [], "search": "../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.f55a23d4.min.js"></script>
+      
+    
+  </body>
+</html>
