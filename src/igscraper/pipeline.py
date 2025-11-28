@@ -4,16 +4,18 @@ Main pipeline for the Instagram Profile Scraper.
 This module orchestrates the entire scraping process, from loading the configuration
 to initializing the backend, collecting post URLs, and scraping them in batches.
 """
-import os
+import os,sys
 import copy
-import sys
 import random
 import traceback
 from .config import load_config, expand_paths, Config, ProfileTarget
 from .backends import SeleniumBackend
 from .logger import get_logger
 from pathlib import Path
-
+from .models.registry_parser import GraphQLModelRegistry
+from .models.common import MODEL_REGISTRY
+from .utils import capture_instagram_requests
+import pdb 
 logger = get_logger(__name__)
 
 class Pipeline:
@@ -32,10 +34,13 @@ class Pipeline:
             config_path: The file path to the TOML configuration file.
             dry_run: A boolean flag for test runs (not currently implemented).
         """
-        self.config = load_config(config_path)
+        self.master_config = load_config(config_path)  # Keep this pristine
+        self.config = None
         self.dry_run = dry_run
-        self.backend = SeleniumBackend(self.config)
+        self.backend = SeleniumBackend(self.master_config)
         self.all_results = {}
+        self.registry = GraphQLModelRegistry(MODEL_REGISTRY, self.master_config.data.schema_path)
+        self.master_config.main.registry = self.registry
 
     def _scrape_single_profile(self, profile_target: ProfileTarget) -> dict:
         """
@@ -50,31 +55,44 @@ class Pipeline:
         profile_name = profile_target.name
         num_posts_to_scrape = profile_target.num_posts
         results = {"scraped_posts": [], "skipped_posts": []}
+        logger.info(f"--- Starting scrape for single profile: {profile_name} and num_posts: {num_posts_to_scrape} ---")
 
         try:
             # Create a profile-specific config by copying the base and updating it
-            profile_config = copy.deepcopy(self.config)
-            profile_config.main.target_profile = profile_name # Needed for path expansion
-
+            # deepcopy_config = copy.deepcopy(self.config)
+            driver_obj_ref = self.master_config._driver
+            self.master_config._driver = None
+            self.config = copy.deepcopy(self.master_config)
+            self.config._driver = driver_obj_ref
+            self.master_config._driver = driver_obj_ref
+            self.config.main.target_profile = profile_name # Needed for path expansion
+            # substitutions = {"target_profile": profile_name}
+            substitutions = {}
+            expand_paths(self.config, substitutions)
+            # pdb.set_trace()
+            logger.info(self.config)
             # Update the backend's config and expand paths for the current profile
-            self.backend.config = profile_config 
-            substitutions = {"target_profile": profile_name}
-            expand_paths(profile_config, substitutions)
+            self.backend.config = self.config
+            self.backend.profile_page.config = self.config
 
             self.backend.open_profile(profile_name)
-
+            path = Path(self.config.data.output_dir) / profile_name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Path created - {path}")
             post_elements = self.backend.get_post_elements(num_posts_to_scrape)
+
             if not post_elements:
                 logger.warning(f"No new posts to scrape for profile {profile_name}. Skipping.")
                 return results
 
-            batch_size = profile_config.main.batch_size
-            if profile_config.main.randomize_batch:
+            batch_size = self.config.main.batch_size
+            if self.config.main.randomize_batch:
                 batch_size = random.randint(batch_size, batch_size + 4)
 
-            results = self.backend.scrape_posts_in_batches(
-                post_elements, batch_size=batch_size, save_every=profile_config.main.save_every
-            )
+            if self.config.main.fetch_comments:
+                results = self.backend.scrape_posts_in_batches(
+                    post_elements, batch_size=batch_size, save_every=self.config.main.save_every
+                )
             logger.info(f"Pipeline completed for profile {profile_name}.")
 
         except Exception as e:
@@ -138,15 +156,17 @@ class Pipeline:
         """
         try:
             self.backend.start()
-
+            self.master_config._driver = self.backend.driver
             # Check which mode to run in
-            if self.config.data.urls_filepath and os.path.exists(self.config.data.urls_filepath):
+            if self.master_config.data.urls_filepath and os.path.exists(self.master_config.data.urls_filepath):
                 # Mode 2: Scrape from a URL file
-                run_name = self.config.main.run_name_for_url_file
+                self.master_config.main.mode = 2
+                run_name = self.master_config.main.run_name_for_url_file
                 self.all_results[run_name] = self._scrape_from_url_file()
-            elif self.config.main.target_profiles:
+            elif self.master_config.main.target_profiles:
                 # Mode 1: Scrape target profiles
-                for profile_target in self.config.main.target_profiles:
+                self.master_config.main.mode = 1
+                for profile_target in self.master_config.main.target_profiles:
                     logger.info(f"--- Starting scrape for profile: {profile_target.name} ---")
                     self.all_results[profile_target.name] = self._scrape_single_profile(profile_target)
             else:

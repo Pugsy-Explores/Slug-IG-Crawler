@@ -1,0 +1,48 @@
+{
+    "data": {
+        "xdt_api__v1__media__media_id__comments__parent_comment_id__child_comments__connection": {
+            "edges": [
+                {
+                    "node": {
+                        "pk": "17871359784368331",
+                        "child_comment_count": null,
+                        "restricted_status": null,
+                        "has_translation": null,
+                        "user": {
+                            "pk": "46406903441",
+                            "is_unpublished": null,
+                            "profile_pic_url": "https://instagram.fblr24-3.fna.fbcdn.net/v/t51.2885-19/491461535_18038759375551442_6198563068133667107_n.jpg?stp=dst-jpg_s150x150_tt6\u0026efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLmRqYW5nby4xMDI0LmMyIn0\u0026_nc_ht=instagram.fblr24-3.fna.fbcdn.net\u0026_nc_cat=102\u0026_nc_oc=Q6cZ2QF00sPoRQlybne4Cj0AR_oUn4WSOSU2TSC7yYfXtitfuqodJ0nhlLReJZoAqRzgS6qBOSPTVSlLW2PtmzmDcSkN\u0026_nc_ohc=s7zIfvV4XsIQ7kNvwG4egZO\u0026_nc_gid=ZeWIlVeCGId723KzsTXjGA\u0026edm=AJ3P50wBAAAA\u0026ccb=7-5\u0026oh=00_AfZAJJK4azQmHhoXAZwsFVp9Fc2NhMlgdypnHLgXz496XQ\u0026oe=68E1698E\u0026_nc_sid=b02659",
+                            "username": "kratosphysio",
+                            "id": "46406903441",
+                            "is_verified": true,
+                            "fbid_v2": "17841446543240862"
+                        },
+                        "has_liked_comment": false,
+                        "text": "@shima_journal 🙏",
+                        "giphy_media_info": null,
+                        "created_at": 1749070252,
+                        "parent_comment_id": "18112889926494558",
+                        "is_covered": false,
+                        "comment_like_count": 1,
+                        "__typename": "XDTCommentDict"
+                    },
+                    "cursor": ""
+                }
+            ],
+            "page_info": {
+                "end_cursor": null,
+                "has_next_page": false,
+                "has_previous_page": false,
+                "start_cursor": null
+            }
+        }
+    },
+    "extensions": {
+        "is_final": true,
+        "server_metadata": {
+            "request_start_time_ms": 1759228655210,
+            "time_at_flush_ms": 1759228655286
+        }
+    },
+    "status": "ok"
+}

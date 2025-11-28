@@ -8,3 +8,5 @@ loguru>=0.7.0
 toml>=0.10.2
 webdriver-manager
 pydantic-settings
+numpy>=1.24
+celery[redis]

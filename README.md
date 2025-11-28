@@ -58,7 +58,7 @@ Before running the main scraper, you must configure it. A `sample_config.toml` i
 
 Now you are ready to start scraping. Run the command below, pointing to your configuration file.
 ```bash
-python3.11 -m src.igscraper.cli --config config.toml
+python3.11 -m igscraper.cli --config config.toml
 ```
 The scraper will start, open the target profile, collect post URLs, and then scrape each post one by one, saving the data as it goes.
 
