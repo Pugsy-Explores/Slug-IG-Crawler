@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 import pdb
 import re
@@ -33,6 +34,8 @@ from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.by import By
 
 from igscraper.logger import get_logger
+import re
+from urllib.parse import urlparse
 
 logger = get_logger(__name__)
 
@@ -1303,6 +1306,85 @@ class HumanScroller:
                 time.sleep(self.human_delay(base=1.5))
 
             self.next_state()
+
+    def move_to_container(self, container_element):
+        self.actions.move_to_element(container_element).perform()
+        time.sleep(random.uniform(0.2, 0.5))  # human settle
+
+
+
+    def perform_opt(self, steps=30, container_el=None):
+        """
+        Perform human-like scrolling constrained to a container.
+
+        Rules:
+        1. Small wheel steps only
+        2. Total scroll distance <= container_height * 0.7
+        """
+
+        # Resolve container height (fallback-safe)
+        if container_el:
+            container_height = container_el.size["height"]
+        else:
+            container_height = 800  # safe default
+
+        max_total_scroll = int(container_height * 0.7)
+        total_scrolled = 0
+
+        for _ in range(steps):
+            if total_scrolled >= max_total_scroll:
+                break
+
+            if self.state == "Idle":
+                time.sleep(self.human_delay(base=0.8))
+
+            elif self.state == "Burst":
+                bursts = random.randint(2, 4)
+                for _ in range(bursts):
+                    if total_scrolled >= max_total_scroll:
+                        break
+
+                    dy = random.randint(60, 120)
+                    if random.random() < 0.05:
+                        dy = -dy  # rare upward correction
+
+                    # Clamp to remaining budget
+                    dy = int(min(abs(dy), max_total_scroll - total_scrolled)) * (1 if dy > 0 else -1)
+
+                    self.actions.scroll_by_amount(0, dy).perform()
+                    total_scrolled += abs(dy)
+
+                    time.sleep(self.human_delay(base=0.12))
+
+            elif self.state == "Smooth":
+                dy = random.randint(80, 160)
+                dy = min(dy, max_total_scroll - total_scrolled)
+
+                self.actions.scroll_by_amount(0, dy).perform()
+                total_scrolled += dy
+
+                time.sleep(self.human_delay(base=0.4))
+
+            elif self.state == "Jitter":
+                dy = random.choice([-40, -20, 20, 40])
+                if total_scrolled + abs(dy) <= max_total_scroll:
+                    self.actions.scroll_by_amount(0, dy).perform()
+                    total_scrolled += abs(dy)
+
+                time.sleep(self.human_delay(base=0.2))
+
+            elif self.state == "BigJump":
+                # Big jumps are *bounded* now
+                dy = int(container_height * random.uniform(0.25, 0.4))
+                dy = min(dy, max_total_scroll - total_scrolled)
+
+                self.actions.scroll_by_amount(0, dy).perform()
+                total_scrolled += dy
+
+                time.sleep(self.human_delay(base=1.2))
+
+            self.next_state()
+
 
 def scroll_with_mouse(
     self,
@@ -5494,3 +5576,68 @@ def extract_script_embedded_comments(driver, sep="$$", logging=False):
         return {"error": str(e), "flattened_data": [], "count": 0, "current_url": driver.current_url}
 
     return result
+
+
+def extract_instagram_shortcode(url: str) -> str | None:
+    """
+    Extracts Instagram post/reel shortcode from URLs like:
+
+    /p/<shortcode>/
+    /reel/<shortcode>/
+    /<username>/p/<shortcode>/
+    /<username>/reel/<shortcode>/
+    """
+    try:
+        parsed = urlparse(url)
+        parts = parsed.path.strip("/").split("/")
+
+        for i in range(len(parts) - 1):
+            if parts[i] in {"p", "reel"}:
+                shortcode = parts[i + 1]
+                if re.fullmatch(r"[A-Za-z0-9_-]+", shortcode):
+                    return shortcode
+    except Exception:
+        pass
+
+    return None
+
+
+def update_post_entity_path(
+    original_path: str,
+    shortcode: str,
+    new_datetime: datetime | None = None,
+) -> str:
+    """
+    Updates a post_entity filename by:
+    1) Inserting the shortcode after the profile name
+    2) Replacing the datetime segment with a new one
+
+    Format:
+        post_entity_{profile}_{shortcode}_{YYYYMMDD}_{HHMM}.jsonl
+    """
+    if new_datetime is None:
+        new_datetime = datetime.now()
+
+    new_date = new_datetime.strftime("%Y%m%d")
+    new_time = new_datetime.strftime("%H%M")
+
+    dir_path, filename = os.path.split(original_path)
+
+    pattern = (
+        r"^post_entity_"
+        r"(?P<profile>.+?)_"
+        r"\d{8}_\d{4}"
+        r"\.jsonl$"
+    )
+
+    match = re.match(pattern, filename)
+    if not match:
+        raise ValueError(f"Unrecognized post_entity filename: {filename}")
+
+    profile = match.group("profile")
+
+    new_filename = (
+        f"post_entity_{profile}_{shortcode}_{new_date}_{new_time}.jsonl"
+    )
+
+    return os.path.join(dir_path, new_filename)

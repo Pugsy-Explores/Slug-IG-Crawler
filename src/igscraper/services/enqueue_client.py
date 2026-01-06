@@ -7,9 +7,21 @@ from typing import Literal, Optional
 
 import psycopg
 import logging
-
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
+load_dotenv(dotenv_path=os.environ.get("ENV_FILE", ".env"), override=False)
+
+def log_pg_env():
+    logger.info(
+        "Postgres env → host=%s port=%s db=%s user=%s",
+        os.environ.get("PUGSY_PG_HOST"),
+        os.environ.get("PUGSY_PG_PORT"),
+        os.environ.get("PUGSY_PG_DATABASE"),
+        os.environ.get("PUGSY_PG_USER"),
+    )
+
+log_pg_env()
 
 @dataclass
 class PostgresConfig:
@@ -34,6 +46,7 @@ class PostgresConfig:
             f"host={self.host} port={self.port} "
             f"dbname={self.database} user={self.user} password={self.password}"
         )
+
 
 
 class FileEnqueuer:

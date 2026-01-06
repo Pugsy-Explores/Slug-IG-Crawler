@@ -1,13 +1,20 @@
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 from re import I
 import sys
+import threading
 import time
 import json
 import pickle
 import random
 import traceback
 from typing import Iterator, Dict, List, Any
+
+from pathlib import Path
+from datetime import datetime, timezone
+from io import BytesIO
+from PIL import Image
 
 from selenium import webdriver
 from seleniumwire import webdriver
@@ -30,7 +37,9 @@ from ..logger import get_logger
 
 from igscraper.chrome import patch_driver
 from igscraper.utils import (
+    HumanScroller,
     click_all_reply_buttons_gently,
+    extract_instagram_shortcode,
     extract_script_embedded_comments,
     find_comment_container,
     human_mouse_move,
@@ -47,6 +56,7 @@ from igscraper.utils import (
     find_audio_for_videos,
     unmute_reel,
     set_reel_volume,
+    update_post_entity_path,
     write_and_run_curl_script,
     write_and_run_full_download_script,
     get_shortcode_web_info,
@@ -60,9 +70,36 @@ from igscraper.services.enqueue_client import PostgresConfig, FileEnqueuer
 from igscraper.services.upload_enqueue import GcsUploadConfig, UploadAndEnqueue
 
 import pdb
+import re
+import subprocess
 
 
 logger = get_logger(__name__)
+
+
+# ⚠️ Suspicious navigation: chrome://new-tab-page/ patch it too
+def assert_chrome_versions_match(chrome_bin: str, chromedriver_bin: str):
+    def major_version(cmd):
+        out = subprocess.check_output([cmd, "--version"], text=True)
+        m = re.search(r"(\d+)\.", out)
+        if not m:
+            raise RuntimeError(f"Cannot parse version from: {out}")
+        return m.group(1), out.strip()
+
+    chrome_major, chrome_full = major_version(chrome_bin)
+    driver_major, driver_full = major_version(chromedriver_bin)
+
+    if chrome_major != driver_major:
+        raise RuntimeError(
+            "Chrome / ChromeDriver version mismatch:\n"
+            f"  Chrome:       {chrome_full}\n"
+            f"  ChromeDriver: {driver_full}"
+        )
+
+    logger.info(
+        f"Chrome versions OK: {chrome_full} | {driver_full}"
+    )
+
 
 class SeleniumBackend(Backend):
     """
@@ -80,77 +117,355 @@ class SeleniumBackend(Backend):
         """
         self.config = config
         self.driver = None
+        self.screenshot_stop_event = threading.Event()
         self.profile_page = None
         self.reply_expander = None
         self.rate_limit_detected = False
         self.rate_limit_reset_time = 0
         self.rate_limit_attempts = 0 
+        self.global_seen_comment_ids: set[str] = set()
+        self.scroller = None
         pg_cfg = PostgresConfig.from_env()
+        logger.info(f"Postgres config: {pg_cfg}")
         enqueuer = FileEnqueuer(pg_cfg)
         gcs_cfg = GcsUploadConfig(bucket_name=self.config.main.gcs_bucket_name)
         self.uploader = UploadAndEnqueue(gcs_cfg, enqueuer)
         self._state_file = "rate_limit_state.json"  # persistent file
         self._load_rate_limit_state()
+        self.COMMENT_MODEL_KEYS = {
+    "xdt_api__v1__media__media_id__comments__connection",
+    # "xdt_api__v1__media__media_id__comments__parent_comment_id__child_comments__connection",
+}
+
+        self.COMMENT_ID_KEY_RE = re.compile(
+            r"(comment).*?(?:\$\$pk|\$\$id|_pk|_id|\.pk|\.id)$",
+            re.IGNORECASE,
+        )
+
+    # def startOg(self):
+    #     """
+    #     Starts the Selenium WebDriver, configures it for stealth, and logs in.
+
+    #     - Sets up Chrome options to evade bot detection.
+    #     - Initializes the Chrome driver using webdriver-manager.
+    #     - Patches the driver to monitor for suspicious navigation.
+    #     - Logs in using cookies specified in the configuration.
+    #     - Initializes the ProfilePage object for page interactions.
+    #     """
+    #     options = Options()
+    #     caps = options.to_capabilities()
+    #     # Only keep network events
+    #     perf_log_prefs = {
+    #         "enableNetwork": True
+    #     }
+    #     options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
+    #     options.set_capability("goog:perfLoggingPrefs", perf_log_prefs)
+    #     # caps = DesiredCapabilities.CHROME.copy()
+    #     # caps['goog:loggingPrefs'] = {'performance': 'ALL'}
+    #     # caps["goog:perfLoggingPrefs"] = perf_log_prefs
+
+    #     # --- Anti-detection settings from test_sel.py ---
+    #     options.add_argument("--disable-blink-features=AutomationControlled")
+    #     # options.add_argument("--auto-open-devtools-for-tabs") # testing for dev UI tools
+    #     options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    #     options.add_experimental_option('useAutomationExtension', False)
+    #     options.add_argument("--autoplay-policy=no-user-gesture-required")
+    #     options.add_argument("--disable-background-timer-throttling")
+    #     options.add_argument("--disable-renderer-backgrounding")
+    #     options.add_argument("--disable-backgrounding-occluded-windows")
+    #     # Human-like settings
+    #     options.add_argument("--window-size=1920,1080")
+    #     options.add_argument("--start-maximized")
+
+    #     # Use user_agent from config or a default one
+    #     user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
+    #     options.add_argument(f'user-agent={user_agent}')
+
+    #     if self.config.main.headless:
+    #         options.add_argument("--headless=new")
+
+    #     # Use WebDriver Manager for automatic driver management
+    #     try:
+    #         service = Service(ChromeDriverManager().install())
+    #         self.driver = webdriver.Chrome(service=service, options=options)
+    #         self.driver = patch_driver(self.driver)
+    #     except Exception as e:
+    #         logger.error(f"Failed to initialize Chrome driver with webdriver-manager: {e}")
+    #         logger.info("Falling back to default webdriver initialization.")
+    #         self.driver = webdriver.Chrome(options=options)
+    #         ## Patch driver to stop the script if detection happens and we are rerouted to a captcha page
+    #         self.driver = patch_driver(self.driver)
+
+    #     self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    #     self.setup_network()
+    #     self._login_with_cookies()
+    #     self.profile_page = ProfilePage(self.driver, self.config)
+    #     # ---- start periodic screenshots ----
+    #     # if self.config.main.enable_screenshots:
+    #     #     self.screenshot_thread = threading.Thread(
+    #     #         target=self._screenshot_worker,
+    #     #         kwargs={"interval_sec": 7},
+    #     #         daemon=True
+    #     #     )
+    #     #     self.screenshot_thread.start()
+    #     #     logger.info("Screenshot worker started (7s interval)")
 
 
     def start(self):
         """
-        Starts the Selenium WebDriver, configures it for stealth, and logs in.
-
-        - Sets up Chrome options to evade bot detection.
-        - Initializes the Chrome driver using webdriver-manager.
-        - Patches the driver to monitor for suspicious navigation.
-        - Logs in using cookies specified in the configuration.
-        - Initializes the ProfilePage object for page interactions.
+        Starts the Selenium WebDriver, configures it for stealth,
+        enables network tracking, and logs in using cookies.
         """
-        options = Options()
-        caps = options.to_capabilities()
-        # Only keep network events
-        perf_log_prefs = {
-            "enableNetwork": True
-        }
-        options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
-        options.set_capability("goog:perfLoggingPrefs", perf_log_prefs)
-        # caps = DesiredCapabilities.CHROME.copy()
-        # caps['goog:loggingPrefs'] = {'performance': 'ALL'}
-        # caps["goog:perfLoggingPrefs"] = perf_log_prefs
 
-        # --- Anti-detection settings from test_sel.py ---
+        options = Options()
+
+        # ------------------------------------------------------------------
+        # Performance / Network logging (CDP)
+        # ------------------------------------------------------------------
+        perf_log_prefs = {"enableNetwork": True}
+        options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
+        # options.set_capability("goog:perfLoggingPrefs", perf_log_prefs)
+
+        # ------------------------------------------------------------------
+        # Anti-detection / stealth flags
+        # ------------------------------------------------------------------
         options.add_argument("--disable-blink-features=AutomationControlled")
-        # options.add_argument("--auto-open-devtools-for-tabs") # testing for dev UI tools
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option('useAutomationExtension', False)
+        options.add_experimental_option("useAutomationExtension", False)
+
         options.add_argument("--autoplay-policy=no-user-gesture-required")
         options.add_argument("--disable-background-timer-throttling")
         options.add_argument("--disable-renderer-backgrounding")
         options.add_argument("--disable-backgrounding-occluded-windows")
-        # Human-like settings
+
+        # ------------------------------------------------------------------
+        # Viewport (mandatory for screenshots)
+        # ------------------------------------------------------------------
         options.add_argument("--window-size=1920,1080")
-        options.add_argument("--start-maximized")
 
-        # Use user_agent from config or a default one
-        user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
-        options.add_argument(f'user-agent={user_agent}')
-
+        # ------------------------------------------------------------------
+        # Headless
+        # ------------------------------------------------------------------
         if self.config.main.headless:
             options.add_argument("--headless=new")
 
-        # Use WebDriver Manager for automatic driver management
-        try:
-            service = Service(ChromeDriverManager().install())
-            self.driver = webdriver.Chrome(service=service, options=options)
-            self.driver = patch_driver(self.driver)
-        except Exception as e:
-            logger.error(f"Failed to initialize Chrome driver with webdriver-manager: {e}")
-            logger.info("Falling back to default webdriver initialization.")
-            self.driver = webdriver.Chrome(options=options)
-            ## Patch driver to stop the script if detection happens and we are rerouted to a captcha page
-            self.driver = patch_driver(self.driver)
 
-        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        # --------------------------------------------------
+        # Environment-specific paths
+        # --------------------------------------------------
+        if self.config.main.use_docker:
+            chrome_bin = os.environ["CHROME_BIN"]
+            chromedriver_bin = os.environ["CHROMEDRIVER_BIN"]
+            profile_dir = "/data/chrome-profile"
+            platform = "Linux x86_64"
+
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-gpu")
+
+        else:
+            chrome_bin = (
+                "/Users/shang/my_work/ig_profile_scraper/"
+                "chrome-mac-arm64/"
+                "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+            )
+            chromedriver_bin = "/opt/homebrew/bin/chromedriver"
+            profile_dir = "/Users/shang/.ig_chrome_profile"
+            platform = "Linux x86_64"  # intentionally Linux-like
+
+            options.add_argument("--remote-debugging-pipe")
+
+        # --------------------------------------------------
+        # Assert version lock
+        # --------------------------------------------------
+        assert_chrome_versions_match(chrome_bin, chromedriver_bin)
+
+        # --------------------------------------------------
+        # Browser identity (must never drift)
+        # --------------------------------------------------
+        user_agent = (
+            "Mozilla/5.0 (X11; Linux x86_64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/143.0.0.0 Safari/537.36"
+        )
+
+        options.binary_location = chrome_bin
+        options.add_argument(f"--user-agent={user_agent}")
+        options.add_argument(f"--user-data-dir={profile_dir}")
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option("useAutomationExtension", False)
+
+
+        # --------------------------------------------------
+        # Start WebDriver
+        # --------------------------------------------------
+        service = Service(chromedriver_bin)
+
+        self.driver = webdriver.Chrome(
+            service=service,
+            options=options
+        )
+
+        # options.add_argument(f"--user-agent={user_agent}")
+        # options.add_argument("--user-data-dir=/tmp/ig_profile")
+
+        # Apply custom driver patching (captcha / redirect detection, etc.)
+        self.driver = patch_driver(self.driver)
+
+        # --------------------------------------------------
+        # Deterministic platform override
+        # --------------------------------------------------
+        self.driver.execute_cdp_cmd(
+            "Page.addScriptToEvaluateOnNewDocument",
+            {
+                "source": f"""
+                    Object.defineProperty(navigator, 'platform', {{
+                        get: () => '{platform}'
+                    }});
+                """
+            }
+        )
+        # ------------------------------------------------------------------
+        # JS-level stealth patches
+        # ------------------------------------------------------------------
+        # self.driver.execute_script(
+        #     "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        # )
+
+        # self.driver.execute_cdp_cmd(
+        #     "Page.addScriptToEvaluateOnNewDocument",
+        #     {
+        #         "source": """
+        #         Object.defineProperty(navigator, 'platform', {
+        #             get: () => arguments[0]
+        #         });
+        #         """,
+        #         "args": [
+        #             "Linux x86_64" if self.config.main.use_docker else "MacIntel"
+        #         ]
+        #     }
+        # )
+
+        # ------------------------------------------------------------------
+        # Stabilize CDP before enabling Network
+        # ------------------------------------------------------------------
+        self.driver.get("about:blank")
+
         self.setup_network()
+
+        # ------------------------------------------------------------------
+        # Login + page bootstrap
+        # ------------------------------------------------------------------
         self._login_with_cookies()
         self.profile_page = ProfilePage(self.driver, self.config)
+        self.scroller = HumanScroller(self.driver)
+
+
+
+    # def start(self):
+    #     """
+    #     Stable Selenium startup:
+    #     - Same Chrome
+    #     - Same profile
+    #     - Same UA
+    #     - Same platform
+    #     - Works on macOS + Docker
+    #     """
+
+    #     options = Options()
+
+    #     options.set_capability(
+    #         "goog:loggingPrefs",
+    #         {"performance": "ALL"}
+    #     )
+
+    #     # --------------------------------------------------
+    #     # Version-locked browser identity
+    #     # --------------------------------------------------
+    #     if self.config.main.use_docker:
+    #         options.binary_location = os.environ["CHROME_BIN"]
+    #         chromedriver_path = os.environ["CHROMEDRIVER_BIN"]
+    #         platform = "Linux x86_64"
+    #         profile_dir = "/data/chrome-profile"
+
+    #         options.add_argument("--no-sandbox")
+    #         options.add_argument("--disable-dev-shm-usage")
+    #         options.add_argument("--disable-gpu"
+
+    #     else:
+    #         options.binary_location = (
+    #             "/Users/shang/my_work/ig_profile_scraper/"
+    #             "chrome-mac-arm64/"
+    #             "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+    #         )
+    #         chromedriver_path = "/opt/homebrew/bin/chromedriver"
+    #         platform = "Linux x86_64"  # intentionally Linux-like
+    #         profile_dir = "/Users/shang/.ig_chrome_profile"
+
+    #         options.add_argument("--remote-debugging-pipe")
+
+    #     # --------------------------------------------------
+    #     # SAME USER AGENT EVERYWHERE
+    #     # --------------------------------------------------
+    #     user_agent = (
+    #         "Mozilla/5.0 (X11; Linux x86_64) "
+    #         "AppleWebKit/537.36 (KHTML, like Gecko) "
+    #         "Chrome/143.0.0.0 Safari/537.36"
+    #     )
+
+    #     # --------------------------------------------------
+    #     # REQUIRED FLAGS
+    #     # --------------------------------------------------
+    #     options.add_argument(f"--user-agent={user_agent}")
+    #     options.add_argument(f"--user-data-dir={profile_dir}")
+    #     options.add_argument("--window-size=1920,1080")
+    #     options.add_argument("--disable-blink-features=AutomationControlled")
+
+    #     options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    #     options.add_experimental_option("useAutomationExtension", False)
+
+    #     if self.config.main.headless:
+    #         options.add_argument("--headless=new")
+
+    #     # --------------------------------------------------
+    #     # Start driver
+    #     # --------------------------------------------------
+    #     service = Service(chromedriver_path)
+
+    #     self.driver = webdriver.Chrome(
+    #         service=service,
+    #         options=options
+    #     )
+
+    #     # --------------------------------------------------
+    #     # Platform override (early, deterministic)
+    #     # --------------------------------------------------
+    #     self.driver.execute_cdp_cmd(
+    #         "Page.addScriptToEvaluateOnNewDocument",
+    #         {
+    #             "source": f"""
+    #                 Object.defineProperty(navigator, 'platform', {{
+    #                     get: () => '{platform}'
+    #                 }});
+    #             """
+    #         }
+    #     )
+
+    #     # --------------------------------------------------
+    #     # Bootstrap
+    #     # --------------------------------------------------
+    #     self.driver.get("about:blank")
+    #     self.setup_network()
+
+    #     # ⚠️ DO NOT inject cookies if profile exists
+    #     # if not os.path.exists(os.path.join(profile_dir, "Default")):
+    #     self._login_with_cookies()
+
+    #     self.profile_page = ProfilePage(self.driver, self.config)
+
 
     def setup_network(self):
         # Enable network tracking
@@ -160,42 +475,138 @@ class SeleniumBackend(Backend):
         self.driver.set_script_timeout(180)
         self.driver.command_executor.set_timeout(300) 
 
+    # def _login_with_cookies(self):
+    #     """
+    #     Loads cookies from a file to authenticate the browser session.
+
+    #     The browser must first navigate to the domain ('instagram.com') before
+    #     cookies can be added. The path to the cookie file is read from the
+    #     configuration. If the file doesn't exist, the program will exit.
+    #     """
+    #     if not self.config.data.cookie_file or not os.path.exists(self.config.data.cookie_file):
+    #         logger.info("No cookie file specified in config or cookie file does not exist. Exiting early.")
+    #         sys.exit(1)
+
+    #     logger.info(f"Attempting to log in using cookies from {self.config.data.cookie_file}")
+    #     self.driver.get("https://www.instagram.com/")  # Must visit domain first
+
+    #     try:
+    #         with open(self.config.data.cookie_file, "rb") as f:
+    #             cookies = pickle.load(f)
+    #     except (pickle.UnpicklingError, EOFError) as e:
+    #         logger.error(f"Could not load cookies from {self.config.data.cookie_file}. Error: {e}")
+    #         return
+
+    #     for cookie in cookies:
+    #         # Selenium expects 'expiry' to be int if present
+    #         if 'expiry' in cookie and isinstance(cookie['expiry'], float):
+    #             cookie['expiry'] = int(cookie['expiry'])
+    #         self.driver.add_cookie(cookie)
+
+    #     self.driver.refresh()  # Apply cookies
+    #     logger.info("✅ Successfully logged in using cookies.")
+    #     time.sleep(3) # Wait a bit for page to settle
+
+
     def _login_with_cookies(self):
         """
-        Loads cookies from a file to authenticate the browser session.
-
-        The browser must first navigate to the domain ('instagram.com') before
-        cookies can be added. The path to the cookie file is read from the
-        configuration. If the file doesn't exist, the program will exit.
+        Ensure Instagram is logged in.
+        Uses cookies only if not already authenticated.
         """
-        if not self.config.data.cookie_file or not os.path.exists(self.config.data.cookie_file):
-            logger.info("No cookie file specified in config or cookie file does not exist. Exiting early.")
-            sys.exit(1)
 
-        logger.info(f"Attempting to log in using cookies from {self.config.data.cookie_file}")
-        self.driver.get("https://www.instagram.com/")  # Must visit domain first
+        # --------------------------------------------------
+        # 1. Check if already logged in
+        # --------------------------------------------------
+        self.driver.get("https://www.instagram.com/")
+        time.sleep(3)
 
-        try:
-            with open(self.config.data.cookie_file, "rb") as f:
-                cookies = pickle.load(f)
-        except (pickle.UnpicklingError, EOFError) as e:
-            logger.error(f"Could not load cookies from {self.config.data.cookie_file}. Error: {e}")
+        current_url = self.driver.current_url
+
+        # --------------------------------------------------
+        # Detect login UI (reliable)
+        # --------------------------------------------------
+        login_elements = self.driver.find_elements(
+            By.XPATH,
+            "//input[@name='username'] | //input[@name='password']"
+        )
+
+        body_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
+
+        if not login_elements and not any(word in body_text for word in ["forgot", "forgotten"]):
+            logger.info("Already logged in — skipping cookie injection")
             return
 
-        for cookie in cookies:
-            # Selenium expects 'expiry' to be int if present
-            if 'expiry' in cookie and isinstance(cookie['expiry'], float):
-                cookie['expiry'] = int(cookie['expiry'])
-            self.driver.add_cookie(cookie)
+        # --------------------------------------------------
+        # 2. Not logged in → try cookies
+        # --------------------------------------------------
+        cookie_path = self.config.data.cookie_file
 
-        self.driver.refresh()  # Apply cookies
-        logger.info("✅ Successfully logged in using cookies.")
-        time.sleep(3) # Wait a bit for page to settle
+        if not cookie_path or not os.path.exists(cookie_path):
+            raise RuntimeError("Not logged in and no cookie file available")
+
+        logger.info(f"Attempting cookie login using {cookie_path}")
+
+        try:
+            with open(cookie_path, "r") as f:
+                cookies = json.load(f)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load cookie file: {e}")
+
+        for cookie in cookies:
+            cookie.pop("sameSite", None)
+            if "expiry" in cookie:
+                cookie["expiry"] = int(cookie["expiry"])
+
+            try:
+                self.driver.add_cookie(cookie)
+            except Exception as e:
+                logger.debug(f"Skipping cookie {cookie.get('name')}: {e}")
+
+        # --------------------------------------------------
+        # 3. Reload and validate
+        # --------------------------------------------------
+        self.driver.get("https://www.instagram.com/")
+        time.sleep(4)
+
+        if "login" in self.driver.current_url:
+            raise RuntimeError("Cookie login failed — still on login page")
+
+        body = self.driver.find_element(By.TAG_NAME, "body").text.lower()
+        if "something went wrong" in body:
+            raise RuntimeError("Cookie login failed — Instagram error page")
+
+        logger.info("✅ Logged in successfully (cookie bootstrap)")
+
+
 
     def stop(self):
         """Quits the WebDriver and closes all associated browser windows."""
+        self.screenshot_stop_event.set()
+        if hasattr(self, "screenshot_thread"):
+            self.screenshot_thread.join(timeout=2)
         if self.driver:
             self.driver.quit()
+
+    def start_screenshot_worker(self):
+        if not self.config.main.enable_screenshots:
+            return
+
+        # prevent double start
+        if getattr(self, "screenshot_thread", None) and self.screenshot_thread.is_alive():
+            logger.debug("Screenshot worker already running")
+            return
+
+        self.screenshot_stop_event.clear()
+
+        self.screenshot_thread = threading.Thread(
+            target=self._screenshot_worker,
+            kwargs={"interval_sec": 7},
+            daemon=True
+        )
+        self.screenshot_thread.start()
+
+        logger.info("Screenshot worker started (7s interval)")
+
 
     def open_profile(self, profile_handle: str) -> None:
         """
@@ -350,7 +761,7 @@ class SeleniumBackend(Backend):
             logger.info(f"Switched to tab {tab_handle} for post {post_index} ({post_url}). Refreshing page.")
             # self.driver.refresh()
             random_delay(2.4, 4.0)  # Wait for at least 3 seconds for the page to load after refresh.
-
+            post_shortcode = extract_instagram_shortcode(post_url)
             # Anti Bot measure
             if random.choice([0,0,1,1,1,1,1]) == 0:
                 human_mouse_move(self.driver,duration=self.config.main.human_mouse_move_duration)
@@ -363,7 +774,7 @@ class SeleniumBackend(Backend):
                 "post_images": [],
                 "post_comments_gif": [],
             }
-
+            self.config.data.post_entity_path = update_post_entity_path(self.config.data.post_entity_path, post_shortcode)
             # If using previously-captured requests to gather most media/metadata,
             # we only need to extract comments here. Skip other extraction blocks.
             if self.config.main.scrape_using_captured_requests:
@@ -472,11 +883,13 @@ class SeleniumBackend(Backend):
 
         # main loop over batches
         for batch_start in range(0, len(post_elements), batch_size):
+            time.sleep(random.uniform(1, 5))
             batch = post_elements[batch_start: batch_start + batch_size]
             opened = []  # list of tuples (index, href, handle)
 
             # --- open all posts in batch (in new tabs) ---
             for i, post_element in enumerate(batch, start=batch_start):
+                time.sleep(random.uniform(1, 5))
                 try:
                     # href = post_element.get_attribute("href")
                     href = post_element
@@ -514,6 +927,7 @@ class SeleniumBackend(Backend):
 
             # --- scrape each opened tab, one-by-one, ensuring closure ---
             for post_index, post_url, tab_handle in opened:
+                time.sleep(random.uniform(3, 10))
                 post_data, error_data = self._scrape_and_close_tab(post_index, post_url, tab_handle, main_handle, debug)
 
                 if post_data is None and error_data is None:
@@ -694,6 +1108,58 @@ class SeleniumBackend(Backend):
             kind="comment",
         )
 
+
+
+    def fire_human_scroll_signals(self, driver, container_selector: str, steps: int = 3):
+        """
+        Fires mouse + wheel-based scroll signals to trigger Instagram GraphQL.
+        No clicking. No DOM mutation. No logic changes.
+        Safe for Docker + headless.
+
+        Call this AFTER your existing scroll logic.
+        """
+
+        js = r"""
+        (function() {
+            const container = document.querySelector(arguments[0]);
+            if (!container) {
+                return { ok: false, reason: "container not found" };
+            }
+
+            // Ensure focus
+            container.tabIndex = -1;
+            container.focus();
+
+            // Mouse move to activate scroll listeners
+            container.dispatchEvent(new MouseEvent("mousemove", {
+                bubbles: true,
+                clientX: Math.random() * container.clientWidth,
+                clientY: Math.random() * container.clientHeight
+            }));
+
+            // Fire multiple wheel events (touchpad-like)
+            for (let i = 0; i < arguments[1]; i++) {
+                container.dispatchEvent(new WheelEvent("wheel", {
+                    deltaY: 300 + Math.random() * 500,
+                    bubbles: true,
+                    cancelable: true
+                }));
+            }
+
+            // Force layout / intersection checks
+            container.getBoundingClientRect();
+
+            // Visibility nudge (cheap but effective)
+            document.dispatchEvent(new Event("visibilitychange"));
+
+            return { ok: true };
+        })();
+        """
+
+        result = driver.execute_script(js, container_selector, steps)
+        time.sleep(random.uniform(0.4, 0.8))  # allow IG to emit GraphQL
+        return result
+
     def _extract_comments_from_captured_requests(self, driver, config, batch_scrolls: int = 6):
         """
         Incrementally expands comment threads and fetches post data after each batch.
@@ -706,15 +1172,16 @@ class SeleniumBackend(Backend):
             config: The application's configuration object.
             batch_scrolls: Number of scroll loops to perform per batch before refreshing data.
         """
+        baseline_count = self.count_parsed_comments(config.data.post_entity_path)
+
         container_info = find_comment_container(driver)
         container = container_info.get("selector") if container_info else None
-        self.reply_expander = ReplyExpander.with_container(driver, container, max_clicks=5)
+        self.reply_expander = ReplyExpander.with_container(driver, container, max_clicks=5, is_headless=self.config.main.headless, base_pause_ms=600)
         total_clicked = 0
         MAX_CLICKS_ALLOWED = 10
         total_clicked_texts = []
         all_logs = []
         batch_index = 0
-        rate_limit_detected = 0
         is_commentdata_saved = False
         # Initial extraction from embed script
         # this call doesnt get recorded into perf logs, as these first few comments are embedded in the HTML.
@@ -724,7 +1191,9 @@ class SeleniumBackend(Backend):
         if is_saved:
             is_commentdata_saved = True
         # self.config.main.registry.get_posts_data(self.config, self.config.data.post_page_data_key, data_type="post")
-
+        prev_comment_count = 0
+        end_comment_attempts = 0
+        MAX_END_COMMENT_ATTEMPTS = 3
         while True:
             batch_index += 1
             logger.debug(f"Starting batch {batch_index}: performing {batch_scrolls} scroll loops.")
@@ -741,45 +1210,134 @@ class SeleniumBackend(Backend):
                     remaining = int(self.rate_limit_reset_time - time.time())
                     logger.info(f"Rate limit active — performing only_scroll for next {remaining}s.")
                     _ = self.reply_expander.only_scroll(container, scroll_steps=30)
-                    # time.sleep(random.uniform(1.0, 2.0))
                     break
                 
-            result = self.reply_expander.expand_replies()
+            # result = self.reply_expander.expand_replies()
+            if config.main.fetch_replies:
+                result = self.reply_expander.expand_replies()
+                # if self.config.main.headless:
+                #     # 2️⃣ Frame sync — forces Chrome to flush layout + observers
+                #     self.driver.execute_script(
+                #         "return new Promise(r => requestAnimationFrame(() => r()));"
+                #     )
+                #     self.fire_human_scroll_signals(
+                #         driver=self.driver,
+                #         container_selector=container,
+                #         steps=3
+                #     )
+            else:
+
+                res = self.reply_expander.only_scroll(container, scroll_steps=30)
+                # if self.config.main.headless:
+                #     pass
+                    # # 2️⃣ Frame sync — forces Chrome to flush layout + observers
+                    # self.driver.execute_script(
+                    #     "return new Promise(r => requestAnimationFrame(() => r()));"
+                    # )
+                    # self.fire_human_scroll_signals(
+                    #     driver=self.driver,
+                    #     container_selector=container,
+                    #     steps=3
+                    # )
+                is_saved = self.config.main.registry.get_posts_data(
+                    self.config,
+                    self.config.data.post_page_data_key,
+                    data_type="post"
+                )
+
+                after_count = self.count_parsed_comments(
+                    self.config.data.post_entity_path
+                )
+                if (after_count - prev_comment_count == 0): # and (prev_comment_count != 0):
+                    possible_end_of_comments = True
+                    end_comment_attempts += 1
+                prev_comment_count = after_count
+
+                delta = after_count - baseline_count
+                # batch_delta = delta - last_delta
+                # last_delta = delta
+
+                result = {
+                    "clickedCount": delta,  # ← semantic progress
+                    "clickedTexts": [],
+                    "logs": [f"Scroll-only batch: +{delta} comments"],
+                    "after_count": after_count,
+                    "baseline_count": baseline_count,
+                }
+                logger.debug(result)
+                if after_count >= config.main.max_comments:
+                    logger.info(
+                        f"Reached max_comments={config.main.max_comments} "
+                        f"(current={after_count}). Stopping."
+                    )
+                    break
+                if end_comment_attempts >= MAX_END_COMMENT_ATTEMPTS:
+                # if res["idle_no_new_content"] == True:
+                    logger.info(f"No new Comments found")
+                    break
+
             clicked_count = result.get("clickedCount", 0)
             clicked_texts = result.get("clickedTexts", [])
             logs = result.get("logs", [])
 
-            if clicked_count <= 2:
-                if self._handle_comment_load_error(driver, container):
-                    # --- EXPONENTIAL COOLDOWN LOGIC ---
-                    self.rate_limit_attempts += 1
-                    base_min, base_max = 240, 360  # base range = 4–6 minutes
-                    multiplier = min(2 ** (self.rate_limit_attempts - 1), 16)  # cap at 8x growth
-                    cooldown_seconds = random.uniform(base_min, base_max) * multiplier
-                    # ----------------------------------
 
-                    self.rate_limit_detected = True
-                    self.rate_limit_reset_time = time.time() + cooldown_seconds
-                    self._save_rate_limit_state()
-                    logger.warning(
-                        f"Rate limit triggered (attempt #{self.rate_limit_attempts}). "
-                        f"Cooldown for {cooldown_seconds/60:.1f} minutes "
-                        f"(multiplier={multiplier}x)."
-                    )
-                    continue  # skip to next loop iteration after retry delay
-                # Exit condition: no more new reply buttons to click
-                logger.info("No reply buttons clicked in this batch.")
-                break
+            # --- PROGRESS / TERMINATION LOGIC ---
+            if config.main.fetch_replies:
+                # Reply-expansion mode: clicks are the progress signal
+                if clicked_count == 0:
+                    if self._handle_comment_load_error(driver, container):
+                        # --- EXPONENTIAL COOLDOWN LOGIC ---
+                        self.rate_limit_attempts += 1
+                        base_min, base_max = 240, 360  # 4–6 minutes
+                        multiplier = min(2 ** (self.rate_limit_attempts - 1), 16)
+                        cooldown_seconds = random.uniform(base_min, base_max) * multiplier
+                        # ----------------------------------
 
-            total_clicked += clicked_count
-            total_clicked_texts.extend(clicked_texts)
+                        self.rate_limit_detected = True
+                        self.rate_limit_reset_time = time.time() + cooldown_seconds
+                        self._save_rate_limit_state()
+
+                        logger.warning(
+                            f"Rate limit triggered (attempt #{self.rate_limit_attempts}). "
+                            f"Cooldown for {cooldown_seconds / 60:.1f} minutes "
+                            f"(multiplier={multiplier}x)."
+                        )
+                        continue  # retry after cooldown
+                    else:
+                        # No clicks and no error → end of expandable replies
+                        logger.info("No reply buttons clicked — end of reply expansion.")
+                        break
+            else:
+                # Scroll-only mode: semantic progress already encoded in clicked_count
+                # (clicked_count == number of newly saved comments)
+                pass
+                # if batch_delta <= 0:
+                #     no_progress_batches += 1
+                #     logger.info(
+                #         f"No new comments in batch {batch_index} "
+                #         f"({no_progress_batches}/{MAX_NO_PROGRESS_BATCHES})"
+                #     )
+                # else:
+                #     no_progress_batches = 0
+
+                # if no_progress_batches >= MAX_NO_PROGRESS_BATCHES:
+                #     logger.info("No new comments after multiple batches — end of comments.")
+                #     break
+
+
             all_logs.extend(logs)
-
-            if total_clicked >= MAX_CLICKS_ALLOWED:
-                logger.info(f"Reached max clicks allowed ({MAX_CLICKS_ALLOWED}). Stopping further expansion." 
-                f"Final clicked count: {total_clicked}")
-                break
             
+            if config.main.fetch_replies:
+                total_clicked += clicked_count
+                total_clicked_texts.extend(clicked_texts)
+
+                if total_clicked >= MAX_CLICKS_ALLOWED:
+                    logger.info(
+                        f"Reached max clicks allowed ({MAX_CLICKS_ALLOWED}). "
+                        f"Final clicked count: {total_clicked}"
+                    )
+                    break
+
             logger.info(
                 f"Batch {batch_index} complete — clicked {clicked_count} reply buttons "
                 f"(total so far: {total_clicked})."
@@ -904,3 +1462,324 @@ class SeleniumBackend(Backend):
             logger.debug("Saved rate limit state to disk.")
         except Exception as e:
             logger.warning(f"Failed to save rate limit state: {e}")
+
+    # def count_comments(self, path: str) -> int:
+    #     if not Path(path).exists():
+    #         return 0
+    #     with open(path, "r", encoding="utf-8") as f:
+    #         return sum(1 for _ in f)
+
+
+    def count_parsed_comments(self, post_entity_path: str) -> int:
+        seen = set()
+
+        if not os.path.exists(post_entity_path):
+            return 0
+
+        with open(post_entity_path, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                parsed_models = record.get("parsed_models", [])
+                if not parsed_models:
+                    continue
+
+                matched_keys = set(parsed_models[0].get("matched_keys", []))
+
+                # 🚨 HARD FILTER: only comment models
+                if not matched_keys & self.COMMENT_MODEL_KEYS:
+                    continue
+
+                for row in record.get("flattened_data", []):
+                    cid = self.extract_comment_id(row)
+                    if cid:
+                        seen.add(cid)
+
+        return len(seen)
+
+
+
+    def extract_comment_id(self, row: dict) -> str | None:
+        """
+        Extract a stable COMMENT identifier from a flattened row.
+        Only keys that clearly belong to comments are allowed.
+        """
+        for key, value in row.items():
+            if not value:
+                continue
+
+            if self.COMMENT_ID_KEY_RE.search(key):
+                return str(value)
+
+        return None
+
+
+    def _extract_ids_from_parsed_data(self, parsed_data) -> set[str]:
+        ids = set()
+        for row in parsed_data.get("flattened_data", []):
+            cid = self.extract_comment_id(row)
+            if cid:
+                ids.add(cid)
+        return ids
+
+
+
+    def _screenshot_worker(self, interval_sec=7):
+        out_dir = Path(self.config.data.shot_dir).expanduser().resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"[screenshot] resolved out_dir = {out_dir}")
+
+        while not self.screenshot_stop_event.is_set():
+            try:
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                path = out_dir / f"shot_{ts}.webp"
+
+                # Capture PNG bytes from Selenium
+                png_bytes = self.driver.get_screenshot_as_png()
+
+                # Decode and re-encode as WebP
+                img = Image.open(BytesIO(png_bytes))
+
+                img.save(
+                    path,
+                    format="WEBP",
+                    quality=78,      # sweet spot: big savings, visually sane
+                    method=2         # slowest = best compression
+                )
+
+                logger.info(f"[screenshot] saved path={path}")
+
+            except Exception as e:
+                logger.debug(f"[screenshot] worker error: {e}")
+
+            self.screenshot_stop_event.wait(interval_sec)
+
+
+# self.driver.execute_script("""
+# const container = document.querySelector(arguments[0]);
+# if (!container) return "NO_CONTAINER";
+
+# container.dispatchEvent(new WheelEvent("wheel", {
+#   deltaY: 600,
+#   bubbles: true,
+#   cancelable: true
+# }));
+
+# container.scrollTop += 600;
+
+# return {
+#   scrollTop: container.scrollTop,
+#   scrollHeight: container.scrollHeight
+# };
+# """, container)
+
+
+# function igWheelScroll(container, delta = 600) {
+#   if (!container) return null;
+
+#   container.dispatchEvent(new WheelEvent("wheel", {
+#     deltaY: delta,
+#     bubbles: true,
+#     cancelable: true
+#   }));
+
+#   container.scrollTop += delta;
+
+#   return {
+#     scrollTop: container.scrollTop,
+#     scrollHeight: container.scrollHeight,
+#     ts: performance.now()
+#   };
+# }
+
+# const r = igWheelScroll(container, container.clientHeight * 0.6);
+# logs.push("🌀 wheel scroll → top=" + r.scrollTop);
+
+# await new Promise(r => requestAnimationFrame(r));
+
+
+# Good, this is the key confirmation: **the container *does* respond to real wheel events in Docker**. That tells us exactly what Instagram is listening for. Now we wire this in **without changing your logic**, just by adding one primitive and reusing it everywhere.
+
+# I’ll keep this clean and mechanical.
+
+# ---
+
+# ## The important insight (why Docker differed)
+
+# Instagram **does not react to `scrollTop` alone** in some environments.
+# It reacts to **wheel + scroll coupling**, processed over animation frames.
+
+# Your snippet works because it does **all three**:
+
+# 1. `WheelEvent("wheel", deltaY)`
+# 2. `scrollTop += …`
+# 3. Executes inside the page event loop
+
+# Your existing JS scrolls *look* correct, but:
+
+# * some paths use smooth scrolling
+# * some rely on height diff heuristics
+# * some exit early on idle
+
+# In Docker/headless, **no wheel → no GraphQL**.
+
+# ---
+
+# ## The primitive to reuse (do not change logic)
+
+# Create **one atomic scroll primitive** and call it from both modes.
+
+# ### JS primitive (inject once, reuse everywhere)
+
+# ```js
+# function igWheelScroll(container, delta = 600) {
+#   if (!container) return null;
+
+#   container.dispatchEvent(new WheelEvent("wheel", {
+#     deltaY: delta,
+#     bubbles: true,
+#     cancelable: true
+#   }));
+
+#   container.scrollTop += delta;
+
+#   return {
+#     scrollTop: container.scrollTop,
+#     scrollHeight: container.scrollHeight,
+#     ts: performance.now()
+#   };
+# }
+# ```
+
+# ---
+
+# ## 1️⃣ Integrate into **only_scroll** (minimal change)
+
+# Inside your JS loop, replace **any** `scrollBy` / `smoothScrollStep` call with:
+
+# ```js
+# const r = igWheelScroll(container, container.clientHeight * 0.6);
+# logs.push("🌀 wheel scroll → top=" + r.scrollTop);
+# ```
+
+# Then immediately yield a frame:
+
+# ```js
+# await new Promise(r => requestAnimationFrame(r));
+# ```
+
+# That’s it.
+# No logic change. No counters touched.
+
+# ---
+
+# ## 2️⃣ Integrate into **expand_replies** (search + settle)
+
+# Two places only.
+
+# ### A) When searching for buttons (instead of gentleSearchScroll internals)
+
+# Replace this block:
+
+# ```js
+# container.scrollBy(0, delta);
+# ```
+
+# with:
+
+# ```js
+# igWheelScroll(container, delta);
+# await new Promise(r => requestAnimationFrame(r));
+# ```
+
+# ### B) After clicking a reply
+
+# Right after:
+
+# ```js
+# el.click();
+# ```
+
+# add:
+
+# ```js
+# igWheelScroll(container, 200);
+# await new Promise(r => requestAnimationFrame(r));
+# ```
+
+# This forces IG to:
+
+# * reflow
+# * schedule network fetch
+# * hydrate new replies
+
+# ---
+
+# ## 3️⃣ Python-side: where to force a frame tick (important)
+
+# You already asked about this line — here is **exactly where it belongs**.
+
+# ### After every scroll batch (both modes)
+
+# ```python
+# self.driver.execute_script(
+#     "return new Promise(r => requestAnimationFrame(() => r()));"
+# )
+# ```
+
+# Place it:
+
+# * after `only_scroll(...)`
+# * after `expand_replies(...)`
+# * after any manual `execute_script` scroll
+
+# This prevents Docker from batching events and skipping IG’s observer.
+
+# ---
+
+# ## 4️⃣ Why this works (and why nothing else did)
+
+# Instagram comment loading is gated on:
+
+# * `wheel` event
+# * user gesture timing
+# * layout thrash across frames
+
+# Local Mac:
+
+# * compositor is fast
+# * smooth scroll works accidentally
+
+# Docker/headless:
+
+# * no compositor acceleration
+# * no wheel → no fetch
+# * smooth scroll ≠ user intent
+
+# You just gave IG exactly what it expects.
+
+# ---
+
+# ## 5️⃣ Final rule (burn this in)
+
+# > **If GraphQL didn’t fire, you didn’t scroll like a human.**
+
+# For IG that means:
+
+# * wheel
+# * scrollTop
+# * animation frame
+# * repeat
+
+# You now have the correct primitive.
+# If you want, next we can:
+
+# * wrap this into a single JS utility injected once
+# * log scroll → GraphQL correlation
+# * or port this exact behavior to Playwright (yes, it’s even cleaner there)
+
+# But as-is: **this will make Docker behave like your local machine.**

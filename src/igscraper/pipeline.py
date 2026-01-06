@@ -19,6 +19,13 @@ from .utils import capture_instagram_requests
 import pdb 
 logger = get_logger(__name__)
 
+def attach_debugger_if_needed():
+    if os.environ.get("DEBUG_ATTACH") == "1":
+        import debugpy
+        debugpy.listen(("0.0.0.0", 5678))
+        print("🟢 Waiting for debugger attach on :5678")
+        debugpy.wait_for_client()
+
 class Pipeline:
     """
     Orchestrates the entire scraping process.
@@ -76,7 +83,7 @@ class Pipeline:
             # Update the backend's config and expand paths for the current profile
             self.backend.config = self.config
             self.backend.profile_page.config = self.config
-
+            self.backend.start_screenshot_worker()
             self.backend.open_profile(profile_name)
             path = Path(self.config.data.output_dir) / profile_name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -158,6 +165,7 @@ class Pipeline:
         """
         try:
             self.backend.start()
+            attach_debugger_if_needed()
             self.master_config._driver = self.backend.driver
             # Check which mode to run in
             if self.master_config.data.urls_filepath and os.path.exists(self.master_config.data.urls_filepath):

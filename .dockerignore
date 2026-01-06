@@ -1,0 +1,31 @@
+# Python virtual environments
+.venv
+.venv*
+venv
+env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Test / coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE / editor noise
+.vscode/
+.idea/
+
+# OS junk
+.DS_Store
+
+# Git
+.git/
+.gitignore
+
+# Optional: large runtime artifacts
+screenshots/
+outputs/

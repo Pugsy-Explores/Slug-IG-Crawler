@@ -1,6 +1,6 @@
 amqp==5.3.1
 annotated-types==0.7.0
-appnope==0.1.4
+# appnope==0.1.4
 asttokens==3.0.0
 async-timeout==5.0.1
 attrs==25.3.0
@@ -44,7 +44,7 @@ idna==3.10
 imageio==2.37.0
 imageio-ffmpeg==0.6.0
 iniconfig==2.1.0
--e git+https://github.com/subzeroid/instagrapi.git@d95f448cb0e045689b3b98e2cd9dc4f90569de8e#egg=instagrapi
+# -e git+https://github.com/subzeroid/instagrapi.git@d95f448cb0e045689b3b98e2cd9dc4f90569de8e#egg=instagrapi
 ipykernel==6.30.1
 ipython==8.37.0
 jedi==0.19.2

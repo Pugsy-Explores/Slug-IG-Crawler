@@ -51,6 +51,8 @@ class MainConfig(BaseSettings):
     target_profile: Optional[str] = None
     # If True, runs the browser in headless mode (no GUI).
     headless: bool = True
+    enable_screenshots: bool = False
+    use_docker: bool = False
     # Minimum random delay (in seconds) between batches of requests.
     rate_limit_seconds_min: int = 2
     # Maximum random delay (in seconds) between batches of requests.
@@ -91,10 +93,14 @@ class MainConfig(BaseSettings):
     # flag is using captured requests
     scrape_using_captured_requests: bool = True
 
+    fetch_replies: bool = True
+    max_comments: int = 20
+
 class DataConfig(BaseSettings):
     """Configuration settings related to file paths and data storage."""
     # Directory where all output files will be stored.
     output_dir: str = "outputs"
+    shot_dir: str
     # Optional: Path to a file containing post URLs to scrape, one per line.
     urls_filepath: Optional[str] = None
     # Path to the file for storing collected post URLs. Supports placeholders.

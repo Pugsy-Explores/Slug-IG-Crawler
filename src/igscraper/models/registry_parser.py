@@ -24,6 +24,11 @@ class GraphQLModelRegistry:
         # copy provided registry into internal map (you can also use global MODEL_REGISTRY)
         self._registry = registry
         self.flatten_schema = self.load_nested_schema(schema_path)
+#         self.COMMENT_MODEL_KEYS = {
+#     "xdt_api__v1__media__media_id__comments__connection",
+#     # "xdt_api__v1__media__media_id__comments__parent_comment_id__child_comments__connection",
+# }
+
         logger.info("Initialized GraphQLModelRegistry")
 
     # ----------------------------
@@ -902,6 +907,20 @@ class GraphQLModelRegistry:
 
             ## for testing purpose. TODO: remove later
             filtered_result = self.filter_parsed_models_by_keys(graphql_data, keys_to_match)
+            if not filtered_result:
+                logger.debug("No matched keys found in this response; skipping save.")
+                return False
+
+            # parsed_ids = self._extract_ids_from_parsed_data(
+            #     filtered_result,
+            #     allowed_model_keys=self.COMMENT_MODEL_KEYS,
+            # )
+
+            # logger.debug(
+            #     f"Extracted {len(parsed_ids)} COMMENT ids "
+            #     f"from {len(filtered_result)} GraphQL models"
+            # )
+
             # extracted_data = graphql_data['flattened'].pop()
             # self.save_parsed_results(extracted_data, self.config.data.extracted_data_path)
 
@@ -1059,3 +1078,59 @@ class GraphQLModelRegistry:
             diag_ext = {}
 
         return rows_data, diag_data, rows_ext, diag_ext
+
+    # def extract_comment_id(self, row: dict) -> str | None:
+    #     """
+    #     Attempts to extract a stable comment identifier from a flattened row
+    #     without hard-coding schema paths.
+    #     """
+    #     for key, value in row.items():
+    #         if not value:
+    #             continue
+
+    #         key_lower = key.lower()
+
+    #         # strongest signals first
+    #         if key_lower.endswith("$$pk") or key_lower.endswith(".pk") or key_lower.endswith("_pk"):
+    #             return str(value)
+
+    #         if key_lower.endswith("$$id") or key_lower.endswith(".id"):
+    #             # avoid media_id / user_id
+    #             if "comment" in key_lower or "node" in key_lower:
+    #                 return str(value)
+
+    #     return None
+
+    # def _extract_ids_from_parsed_data(
+    #     self,
+    #     parsed_models: list[dict],
+    #     allowed_model_keys: set[str],
+    # ) -> set[str]:
+    #     """
+    #     Extract COMMENT ids only from allowed GraphQL models.
+    #     """
+    #     ids = set()
+
+    #     if not parsed_models:
+    #         return ids
+
+    #     for model in parsed_models:
+    #         if not isinstance(model, dict):
+    #             continue
+
+    #         parsed_models_meta = model.get("parsed_models", [])
+    #         if not parsed_models_meta:
+    #             continue
+
+    #         matched_keys = set(parsed_models_meta[0].get("matched_keys", []))
+
+    #         # 🚨 HARD GATE — ignore feed / timeline / profile models
+    #         if not matched_keys & allowed_model_keys:
+    #             continue
+
+    #         for row in model.get("flattened_data", []):
+    #             cid = self.extract_comment_id(row)
+    #             if cid:
+    #                 ids.add(cid)
+
+    #     return ids

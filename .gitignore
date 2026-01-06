@@ -16,4 +16,4 @@ dist/
 outputs/
 
 # cookies
-src/igscraper/cookies*
+src/igscraper/cookies/

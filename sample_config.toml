@@ -77,6 +77,9 @@ comments_scroll_retries = 3
 # Higher values will collect more comments but take longer. Recommended: 30-60.
 comment_scroll_steps = 3
 
+fetch_replies = true
+max_comments = 60
+
 # --- Data and File Path Settings ---
 [data]
 # The main directory where all output files will be stored.
