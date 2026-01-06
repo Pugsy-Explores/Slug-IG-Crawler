@@ -1,4 +1,4 @@
-from src.igscraper.utils import normalize_hashtags, criteria_example
+from igscraper.utils import normalize_hashtags, criteria_example
 
 def test_normalize_hashtags():
     caption = "This is a #test post with #multiple #hashtags"

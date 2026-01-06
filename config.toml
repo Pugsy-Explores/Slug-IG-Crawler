@@ -1,0 +1,149 @@
+# --- Main Application Settings ---
+
+[main]
+# defaults to 1 if not set
+mode = 1
+# --- CHOOSE ONE MODE ---
+
+# mode 1: Scrape from profiles.
+# A list of Instagram profiles to scrape. Each has a 'name' and 'num_posts'.
+# _beauty_fashion
+target_profiles = [
+  #{ name = "camilacoelho",        num_posts = 20 },
+  #{ name = "sincerelyjules",      num_posts = 20 },
+  #{ name = "weworewhat",          num_posts = 20 },
+  #{ name = "valerialipovetsky",   num_posts = 20 },
+  #{ name = "everyday_abby",       num_posts = 20 },
+  { name = "memezar",           num_posts = 20 },
+  { name = "nikkietutorials",     num_posts = 20 },
+  { name = "komalpandeyofficial", num_posts = 20 },
+  { name = "mrunu",               num_posts = 20 },
+  { name = "iam_neetubisht_",     num_posts = 20 },
+  { name = "radhika_bangia",      num_posts = 20 },
+  { name = "somya_daaundkar",     num_posts = 20 },
+  { name = "skims",               num_posts = 20 },
+  { name = "alexcattoni",         num_posts = 20 },
+  { name = "huda",                num_posts = 20 },
+  { name = "hudabeauty",          num_posts = 20 },
+  { name = "lindseyholland_",     num_posts = 20 },
+  { name = "emvonhofsten",        num_posts = 20 },
+  { name = "tsangtastic",         num_posts = 20 },
+  { name = "himichelleli",        num_posts = 20 },
+  { name = "anoukyve",            num_posts = 20 }
+]
+
+
+#target_profiles = [
+    #{ name = "epicfunnypage", num_posts = 1 },
+    #{ name = "fuckjerry", num_posts = 1 },
+    #{ name = "sarcasm_only", num_posts = 1 },
+    #{ name = "daquan", num_posts = 1 },
+    #{ name = "thefatjewish", num_posts = 1 },
+    #{ name = "mytherapistsays", num_posts = 1 },
+    ##{ name = "memerizey", num_posts = 1 },
+    #{ name = "funnymemes", num_posts = 1 },
+    #{ name = "relatablememes", num_posts = 1 },
+    #{ name = "couplesnote", num_posts = 1 },
+    #{ name = "memezar", num_posts = 1 },
+    ##{ name = "drunk", num_posts = 1 },
+    #{ name = "trolls_official", num_posts = 1 },
+    ##{ name = "idiotic_trolls", num_posts = 1 },
+    #{ name = "ghantaa", num_posts = 1 },
+    ##{ name = "naughtworld", num_posts = 1 },
+    #{ name = "adultsociety", num_posts = 1 }
+#]
+
+
+# mode 2: Scrape from a list of URLs.
+# run_name_for_url_file = "reel_support_test_14_11" # Used for output folder name in URL file mode
+
+# comment mode
+fetch_comments = true
+fetch_replies = false
+max_comments = 40
+
+# If true, the browser will run in the background without a visible window.
+# Recommended: true for performance, false for debugging.
+headless = true
+enable_screenshots = true
+use_docker = true
+# The minimum and maximum random delay (in seconds) between batches of requests.
+# This helps avoid rate-limiting. Recommended: 2-5 seconds.
+rate_limit_seconds_min = 2
+rate_limit_seconds_max = 4
+
+# General-purpose retry count for various operations.
+max_retries = 3
+
+# Number of posts to open in new tabs and scrape in a single batch.
+# A smaller number (e.g., 3-5) uses less memory and is safer.
+batch_size = 2
+
+# If true, the batch size will be randomized slightly to appear more human.
+randomize_batch = false
+
+# Number of retries when scrolling the main profile page if no new content loads.
+page_scroll_retries = 2
+
+# Duration (in seconds) for the simulated human mouse movement in each new tab.
+human_mouse_move_duration = 0.5
+
+# Save scraped data to the final file after every N posts.
+# A smaller number is safer against crashes but increases disk I/O.
+save_every = 2
+
+# Number of retries when scrolling for comments if no new content loads.
+comments_scroll_retries = 1
+
+# Number of scroll steps to perform when collecting comments on a post.
+# Higher values will collect more comments but take longer. Recommended: 30-60.
+comment_scroll_steps = 3
+
+scrape_using_captured_requests = true
+
+gcs_bucket_name="pugsy_ai_crawled_data"
+
+# --- Data and File Path Settings ---
+[data]
+# The main directory where all output files will be stored.
+output_dir = "outputs"
+# These paths use placeholders like {target_profile} which will be automatically filled.
+# In URL file mode, {target_profile} is replaced by `run_name_for_url_file`.
+# urls_filepath = "urls_to_scrape.txt"
+
+shot_dir = "{output_dir}/{date}/screens"
+posts_path = "{output_dir}/{date}/{target_profile}/posts_{target_profile}_{datetime}.txt"
+post_entity_path = "{output_dir}/{date}/{target_profile}/post_entity_{target_profile}_{datetime}.jsonl"
+profile_path = "{output_dir}/{date}/{target_profile}/profile_data_{target_profile}_{datetime}.jsonl"
+metadata_path = "{output_dir}/{date}/{target_profile}/metadata_{target_profile}.jsonl"
+skipped_path = "{output_dir}/{date}/{target_profile}/skipped_{target_profile}_{datetime}.txt"
+tmp_path = "{output_dir}/{date}/{target_profile}/scrape_results_tmp_{target_profile}_{datetime}.jsonl"
+media_path = "{output_dir}/{date}/{target_profile}/media_{target_profile}"
+schema_path = "src/igscraper/flatten_schema.yaml"
+models_path = "{output_dir}/{date}/{target_profile}/models_{target_profile}_{datetime}.jsonl"
+extracted_data_path = "{output_dir}/{date}/{target_profile}/exdata_{target_profile}_{datetime}.jsonl"
+graphql_keys_path = "{output_dir}/{date}/{target_profile}/graphql_keys_{target_profile}_{datetime}.jsonl"
+post_page_data_key = ["xdt_api__v1__media__media_id__comments__connection", "xdt_api__v1__media__media_id__comments__parent_comment_id__child_comments__connection"]
+profile_page_data_key = ["xdt_api__v1__feed__user_timeline_graphql_connection"]
+# graph_path = "{output_dir}/{target_profile}/graphdata_{target_profile}.jsonl"
+# IMPORTANT: Update this with the name of the cookie file generated by `login_Save_cookie.py`.
+cookie_file = "src/igscraper/cookies/cookies_chromium_linuxish_1767683042.json"
+#cookie_file = "src/igscraper/cookies/instagram_chromium_1767652205495.json"
+
+
+# --- Logging Settings ---
+[logging]
+# The logging level.
+# Recommended: "INFO" for normal runs, "DEBUG" for troubleshooting.
+level = "DEBUG"
+log_dir = "outputs/logs"
+log_format = "%(asctime)s [%(levelname)s/%(processName)s] %(name)s: %(message)s"
+date_format = "%Y-%m-%d %H:%M:%S"
+
+# --- Celery Settings ---
+
+[celery]
+broker_url = "redis://localhost:6379/0"
+result_backend = "redis://localhost:6379/0"
+log_format = "%(asctime)s [%(levelname)s/%(processName)s] %(name)s: %(message)s"
+date_format = "%Y-%m-%d %H:%M:%S"

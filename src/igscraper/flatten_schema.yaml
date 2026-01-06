@@ -1,0 +1,68 @@
+rules:
+  data:
+    __strict__: true
+    __separate__: true
+    xdt_api__v1__feed__user_timeline_graphql_connection:
+      edges:
+        unwrap: node
+        fields: ["id", "pk", "code", "taken_at", "comment_count", "like_count","view_count", "comments_disabled","like_and_view_counts_disabled", "product_type", "media_type","carousel_media_count"]
+        carousel_media:
+          fields: ["id","pk", "media_type", "product_type", "carousel_parent_id"]
+        #   caption:
+        #     fields: ["text","created_at"]
+          video_versions:
+            fields: ["url","height","width", "type"]
+          image_versions2:
+            candidates:
+              fields: ["url", "height", "width"]
+
+        caption:
+          fields: ["text","created_at"]
+        video_versions:
+          fields: ["url","height","width", "type"]
+        image_versions2:
+          candidates:
+            fields: ["url", "height", "width"]
+        user:
+          fields: ["id", "username"]
+    xdt_api__v1__media__media_id__comments__connection:
+      unwrap: edges
+      node:
+        fields: ["pk","child_comment_count", "text", "created_at", "parent_comment_id", "comment_like_count", "has_translation"]
+        user:
+          fields: ["id", "username", "profile_pic_url"]
+        giphy_media_info:
+            fields: ["id"]
+            first_party_cdn_proxied_images:
+              fixed_height:
+                fields: ["url"]
+    xdt_api__v1__media__media_id__comments__parent_comment_id__child_comments__connection:
+      edges:
+        unwrap: node
+        fields: ["pk","child_comment_count", "text", "created_at", "parent_comment_id", "comment_like_count", "has_translation"]
+        user:
+          fields: ["pk", "username", "profile_pic_url"] 
+        giphy_media_info:
+          fields: ["id"]
+          first_party_cdn_proxied_images:
+            fixed_height:
+              fields: ["url"]
+      # fetch__XDTMediaDict:
+      #   fields: ["code", "pk", "id", "taken_at", "media_type", "product_type"]
+      #   carousel_media:
+      #     fields: ["id"]
+      #     image_versions2:
+      #       candidates:
+      #         fields: ["url", "height", "width"]
+      #   image_versions2:
+      #     candidates:
+      #       fields: ["url", "height", "width"]
+      #   user:
+      #     fields: ["id", "username"]
+  extensions:
+    unwrap: all_video_dash_prefetch_representations
+    fields: ["video_id"]
+    representations:
+      fields: ["base_url", "width", "height", "mime_type", "representation_id"]
+      segments:
+        fields: ["start", "end"]

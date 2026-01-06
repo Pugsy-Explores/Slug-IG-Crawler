@@ -27,12 +27,20 @@ def is_allowed_instagram_url(url: str) -> bool:
     if len(path_parts) == 2 and path_parts[0] == "p":
         return True
 
+    # Case for reel page (/reel/{id}/)
+    if len(path_parts) == 2 and path_parts[0] == "reel":
+        return True
+
     # Case 3: profile page (/{username}/)
     if len(path_parts) == 1:
         return True
 
     # Case 4: nested post under profile (/{username}/p/{id}/)
     if len(path_parts) == 3 and path_parts[1] == "p":
+        return True
+
+    # Case for nested reel under profile (/{username}/reel/{id}/)
+    if len(path_parts) == 3 and path_parts[1] == "reel":
         return True
 
     return False

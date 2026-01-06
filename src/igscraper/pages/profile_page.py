@@ -6,8 +6,8 @@ import time, logging
 from typing import List
 from selenium.webdriver.support.ui import WebDriverWait
 
-from src.igscraper.utils import scrape_comments_with_gif,scroll_with_mouse,random_delay
-from src.igscraper.logger import get_logger
+from igscraper.utils import HumanScroller, scrape_comments_with_gif,scroll_with_mouse,random_delay,capture_instagram_requests
+from igscraper.logger import get_logger
 from typing import List
 from selenium.common.exceptions import WebDriverException, StaleElementReferenceException
 
@@ -35,6 +35,7 @@ class ProfilePage(BasePage):
         """
         super().__init__(driver)
         self.config = config
+        self.scroller = HumanScroller(self.driver)
 
     def navigate_to_profile(self, handle: str) -> None:
         """
@@ -82,7 +83,7 @@ class ProfilePage(BasePage):
         posts = []
         last_height = self.driver.execute_script("return document.body.scrollHeight")
         retries = 0
-
+        is_data_saved = False
         try:
             while len(posts) < limit:
                 try:
@@ -90,7 +91,7 @@ class ProfilePage(BasePage):
                     for post in new_posts:
                         try:
                             href = post.get_attribute("href")
-                            if href and "reel" not in href and href not in posts:
+                            if href and href not in posts:
                                 posts.append(href)
                                 if len(posts) >= limit:
                                     break
@@ -98,70 +99,38 @@ class ProfilePage(BasePage):
                             logger.debug("Skipped stale element while extracting href.")
                             continue
 
-                    scroll_with_mouse(self, steps=4)
+                    # scroll_with_mouse(self, steps=4)
+                    self.scroller.perform(4)
+                    if len(posts) % 12 == 0 and len(posts) != 0:
+                        is_saved = self.config.main.registry.get_posts_data(self.config, self.config.data.profile_page_data_key, data_type="profile")
+                        if is_saved:
+                            is_data_saved = True
 
                     new_height = self.driver.execute_script("return document.body.scrollHeight")
                     if new_height == last_height:
                         retries += 1
-                        random_delay(1,3)
+                        random_delay(1,2)
                         if retries >= self.config.main.page_scroll_retries:
                             logger.warning("No new posts found, stopping scroll.")
                             break
                     else:
                         retries = 0
                     last_height = new_height
-
                 except WebDriverException as e:
                     logger.error(f"Selenium error during scroll: {e}")
                     break
 
         except Exception as e:
             logger.exception(f"Unexpected error in scroll_and_collect: {e}")
+            return False, []
 
         finally:
+            is_saved = self.config.main.registry.get_posts_data(self.config, self.config.data.profile_page_data_key, data_type="profile")
+            # if is_saved or is_data_saved:
+                # logger.info("Profile page data was saved. Trying to push to gs bucket")
+                # self.backend.on_posts_batch_ready(self.config.data.profile_path)
             logger.info(f"Collected {len(posts)} post URLs.")
-            return posts
-
-    
-    # def scroll_and_collect(self, limit: int) -> List[WebElement]:
-    #     posts = []
-    #     last_height = self.driver.execute_script("return document.body.scrollHeight")
-    #     retries = 0
-
-    #     try:
-    #         while len(posts) < limit:
-    #             try:
-    #                 new_posts = self.get_visible_post_elements()
-    #                 for post in new_posts:
-    #                     try:
-    #                         href = post.get_attribute("href")
-    #                         if post not in posts and len(posts) < limit and href and "reel" not in href:
-    #                             posts.append(post)
-    #                     except StaleElementReferenceException:
-    #                         logger.debug("Skipped stale element.")
-    #                         continue
-
-    #                 scroll_with_mouse(self, steps=4)
-
-    #                 new_height = self.driver.execute_script("return document.body.scrollHeight")
-    #                 if new_height == last_height:
-    #                     retries += 1
-    #                     if retries >= 3:
-    #                         logger.warning("No new posts found, stopping scroll.")
-    #                         break
-    #                 last_height = new_height
-
-    #             except WebDriverException as e:
-    #                 logger.error(f"Selenium error during scroll: {e}")
-    #                 break
-
-    #     except Exception as e:
-    #         logger.exception(f"Unexpected error in scroll_and_collect: {e}")
-
-    #     finally:
-    #         logger.info(f"Collected {len(posts)} post elements.")
-    #         return posts
-
+            return (is_data_saved or is_saved), posts
 
     def open_post_element(self, post_element: WebElement) -> None:
         """
@@ -203,3 +172,5 @@ class ProfilePage(BasePage):
         return wait.until(
             lambda d: len(d.find_elements(By.TAG_NAME, "section")) >= min_sections
         )
+
+    # def collect_post_urls_data(self):
