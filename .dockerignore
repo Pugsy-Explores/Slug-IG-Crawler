@@ -30,3 +30,5 @@ htmlcov/
 screenshots/
 outputs/
 src/igscraper/cookies/*
+data/
+chrome*

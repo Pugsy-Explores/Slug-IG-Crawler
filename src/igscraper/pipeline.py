@@ -215,9 +215,9 @@ class Pipeline:
             return {"scraped_posts": [], "skipped_posts": []}
 
         # 6. Filter already-processed URLs (critical)
-        processed = self.backend._load_processed_urls(run_config.data.metadata_path)
-        urls_to_scrape = [u for u in post_urls if u not in processed]
-
+        # processed = self.backend._load_processed_urls(run_config.data.metadata_path)
+        # urls_to_scrape = [u for u in post_urls if u not in processed]
+        urls_to_scrape = post_urls
         if not urls_to_scrape:
             logger.info("No new URLs to scrape after filtering.")
             return {"scraped_posts": [], "skipped_posts": []}
@@ -266,10 +266,15 @@ class Pipeline:
             logger.critical(f"A critical error occurred during pipeline setup or teardown: {e}")
             logger.debug(traceback.format_exc())
         finally:
+            import threading
+            print("THREADS AT EXIT:")
+            for t in threading.enumerate():
+                print(t.name, "daemon=", t.daemon)
             # Stop the backend once after all profiles are processed
             if self.backend:
                 self.backend.stop()
                 logger.info("Browser has been closed.")
+            os._exit(0)
 
         return self.all_results
 
