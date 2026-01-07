@@ -17,6 +17,7 @@ The Instagram Profile Scraper is a Python-based web scraping application that co
 9. [Authentication](#authentication)
 10. [Docker and Docker Compose](#docker-and-docker-compose)
 11. [Data Persistence](#data-persistence)
+12. [Performance Timing & Observability](#performance-timing--observability)
 
 ---
 
@@ -905,6 +906,143 @@ Key external dependencies:
 - Set `headless = false` to observe browser behavior
 - Set `logging.level = "DEBUG"` for verbose logging
 - Use `--dry-run` flag to test configuration without scraping
+
+---
+
+## Performance Timing & Observability
+
+The scraper emits structured timing logs for performance analysis, bottleneck detection, and cost modeling. These logs are designed to be Prometheus/Loki-friendly and provide insights into both active processing time and total wall-clock time.
+
+### Timing Metrics
+
+The scraper tracks two distinct timing metrics:
+
+#### Total Time
+Measures **end-to-end wall time** from when a unit of work becomes eligible for processing until it completes (success or error). This includes:
+- Scrolling operations
+- Clicking actions
+- DOM waits
+- Network waits
+- Explicit rate-limit sleeps
+- Retries and backoff delays
+
+Total time reflects **real-world scraping latency** as experienced by the system.
+
+#### Active Time
+Measures **intentional work time** spent on actual scraping operations. This includes:
+- Scrolling actions
+- Clicking
+- DOM extraction
+- Media extraction
+- GraphQL capture and parsing
+
+Active time **excludes**:
+- Explicit `sleep()` calls
+- Idle polling loops
+- Backoff delays
+
+Active time answers: *"How expensive is this profile or post to scrape?"*
+
+**Required Invariant:** `active_time_ms <= total_time_ms` (always enforced)
+
+### Log Events
+
+Two separate structured log events are emitted for each tracked operation:
+
+1. **`pipeline_total_time`** - Total wall-clock time
+2. **`pipeline_active_time`** - Active processing time
+
+These events are **never combined** into a single log entry. Each event is emitted independently with the same schema.
+
+### Log Schema
+
+Both timing events use the following structured schema (emitted as JSON):
+
+| Field            | Value                                           |
+|------------------|-------------------------------------------------|
+| `event`          | `pipeline_active_time` OR `pipeline_total_time` |
+| `category`       | `creator_profile` OR `creator_content`          |
+| `creator_handle` | Instagram profile handle                        |
+| `content_id`     | Post/Reel ID or URL slug, or `null` for profile |
+| `pipeline`       | Fixed value: `"igscraper"`                      |
+| `duration_ms`    | Integer milliseconds                            |
+| `status`         | `"success"` or `"error"`                        |
+| `error_type`     | Exception class name or `null`                  |
+| `consumer_id`    | Consumer ID from config (or `null` if not set) |
+
+### Timing Levels
+
+#### Profile-Level Timing
+
+**Location:** `pipeline.py` - `_scrape_single_profile()`
+
+**Scope:** Wraps the entire profile scraping execution, including:
+- Profile navigation
+- Post URL collection
+- Batch post scraping
+
+**Category:** `creator_profile`
+
+**Example Log Entries:**
+```json
+{"event": "pipeline_total_time", "category": "creator_profile", "creator_handle": "example_user", "content_id": null, "pipeline": "igscraper", "duration_ms": 125000, "status": "success", "error_type": null, "consumer_id": "default_consumer"}
+{"event": "pipeline_active_time", "category": "creator_profile", "creator_handle": "example_user", "content_id": null, "pipeline": "igscraper", "duration_ms": 95000, "status": "success", "error_type": null, "consumer_id": "default_consumer"}
+```
+
+#### Post/Reel-Level Timing
+
+**Location:** `selenium_backend.py` - `_scrape_and_close_tab()`
+
+**Scope:** Wraps the full lifecycle of scraping one post/reel, including:
+- Tab switching
+- Title/metadata extraction
+- Media extraction
+- Likes extraction
+- Comments extraction
+
+**Category:** `creator_content`
+
+**Content ID:** Uses post shortcode if available, otherwise falls back to post URL slug.
+
+**Example Log Entries:**
+```json
+{"event": "pipeline_total_time", "category": "creator_content", "creator_handle": "example_user", "content_id": "ABC123xyz", "pipeline": "igscraper", "duration_ms": 8500, "status": "success", "error_type": null, "consumer_id": "default_consumer"}
+{"event": "pipeline_active_time", "category": "creator_content", "creator_handle": "example_user", "content_id": "ABC123xyz", "pipeline": "igscraper", "duration_ms": 6200, "status": "success", "error_type": null, "consumer_id": "default_consumer"}
+```
+
+### Error Handling
+
+Timing logs **always emit**, even on failure:
+- On exception: `status = "error"`, `error_type = <exception class name>`
+- After logging: Exception is re-raised (never swallowed)
+- Both total and active time are recorded up to the point of failure
+
+### Implementation Details
+
+- **Clock:** Uses `time.perf_counter()` (monotonic clock) for precise measurements
+- **Precision:** Durations converted to integer milliseconds
+- **Independence:** Active and total time are measured independently with separate timers
+- **Placement:** Timers wrap existing function boundaries, avoiding tight inner loops
+
+### Use Cases
+
+These timing logs enable:
+
+1. **Latency Analysis:** Understand real-world scraping performance across profiles and posts
+2. **Bottleneck Detection:** Identify slow operations by comparing active vs total time
+3. **Cost Modeling:** Estimate resource costs based on active processing time
+4. **Prometheus/Loki Ingestion:** Structured JSON format is ready for log aggregation systems
+5. **Performance Regression Detection:** Track timing trends over time
+
+### Example Analysis
+
+```bash
+# Extract profile-level timings
+grep "pipeline_total_time.*creator_profile" scraper_log_*.log | jq '.duration_ms'
+
+# Compare active vs total time for posts
+grep "pipeline_.*_time.*creator_content" scraper_log_*.log | jq '{event, duration_ms}' | jq -s 'group_by(.event)'
+```
 
 ---
 

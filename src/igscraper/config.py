@@ -95,6 +95,8 @@ class MainConfig(BaseSettings):
 
     fetch_replies: bool = True
     max_comments: int = 20
+    # Consumer ID for identifying the scraper instance in logs
+    consumer_id: Optional[str] = None
 
 class DataConfig(BaseSettings):
     """Configuration settings related to file paths and data storage."""

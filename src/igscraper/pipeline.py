@@ -9,6 +9,8 @@ import os,sys
 import copy
 import random
 import traceback
+import time
+import json
 from .config import load_config, expand_paths, Config, ProfileTarget
 from .backends import SeleniumBackend
 from .logger import get_logger
@@ -66,6 +68,13 @@ class Pipeline:
         datetime_now = datetime.datetime.now().strftime("%Y%m%d_%H%M")
         logger.info(f"--- Starting scrape for single profile: {profile_name} and num_posts: {num_posts_to_scrape} and datetime: {datetime_now} ---")
 
+        # Timing: Start total time (wall clock)
+        total_time_start = time.perf_counter()
+        active_time_start = time.perf_counter()
+        active_time_accumulated = 0.0
+        error_type = None
+        status = "success"
+
         try:
             # Create a profile-specific config by copying the base and updating it
             # deepcopy_config = copy.deepcopy(self.config)
@@ -84,14 +93,35 @@ class Pipeline:
             self.backend.config = self.config
             self.backend.profile_page.config = self.config
             self.backend.start_screenshot_worker()
+            
+            # Active time: open_profile
+            active_time_end = time.perf_counter()
+            active_time_accumulated += (active_time_end - active_time_start)
             self.backend.open_profile(profile_name)
+            active_time_start = time.perf_counter()
+            
             path = Path(self.config.data.output_dir) / profile_name
             path.parent.mkdir(parents=True, exist_ok=True)
             logger.info(f"Path created - {path}")
+            
+            # Active time: get_post_elements
+            active_time_end = time.perf_counter()
+            active_time_accumulated += (active_time_end - active_time_start)
             post_elements = self.backend.get_post_elements(num_posts_to_scrape)
+            active_time_start = time.perf_counter()
 
             if not post_elements:
                 logger.warning(f"No new posts to scrape for profile {profile_name}. Skipping.")
+                # Still emit timing logs even if no posts
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
+                total_time_end = time.perf_counter()
+                total_time_ms = int((total_time_end - total_time_start) * 1000)
+                active_time_ms = int(active_time_accumulated * 1000)
+                
+                # Emit timing logs
+                self._emit_timing_log("pipeline_total_time", "creator_profile", profile_name, None, total_time_ms, status, error_type)
+                self._emit_timing_log("pipeline_active_time", "creator_profile", profile_name, None, active_time_ms, status, error_type)
                 return results
 
             batch_size = self.config.main.batch_size
@@ -99,14 +129,40 @@ class Pipeline:
                 batch_size = random.randint(batch_size, batch_size + 4)
 
             if self.config.main.fetch_comments:
+                # Active time: scrape_posts_in_batches (this will track its own active time internally)
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
                 results = self.backend.scrape_posts_in_batches(
                     post_elements, batch_size=batch_size, save_every=self.config.main.save_every
                 )
+                active_time_start = time.perf_counter()
+            
+            # Final active time accumulation
+            active_time_end = time.perf_counter()
+            active_time_accumulated += (active_time_end - active_time_start)
             logger.info(f"Pipeline completed for profile {profile_name}.")
 
         except Exception as e:
+            status = "error"
+            error_type = type(e).__name__
             logger.critical(f"Pipeline for profile '{profile_name}' failed with an error: {e}")
             logger.debug(traceback.format_exc())
+            # Accumulate any remaining active time
+            active_time_end = time.perf_counter()
+            active_time_accumulated += (active_time_end - active_time_start)
+        finally:
+            # Calculate final timings
+            total_time_end = time.perf_counter()
+            total_time_ms = int((total_time_end - total_time_start) * 1000)
+            active_time_ms = int(active_time_accumulated * 1000)
+            
+            # Ensure active_time <= total_time
+            if active_time_ms > total_time_ms:
+                active_time_ms = total_time_ms
+            
+            # Emit timing logs
+            self._emit_timing_log("pipeline_total_time", "creator_profile", profile_name, None, total_time_ms, status, error_type)
+            self._emit_timing_log("pipeline_active_time", "creator_profile", profile_name, None, active_time_ms, status, error_type)
         
         return results
 
@@ -191,6 +247,33 @@ class Pipeline:
                 logger.info("Browser has been closed.")
 
         return self.all_results
+
+    def _emit_timing_log(self, event: str, category: str, creator_handle: str, content_id: str | None, duration_ms: int, status: str, error_type: str | None):
+        """
+        Emit a structured timing log event.
+        
+        Args:
+            event: Either "pipeline_total_time" or "pipeline_active_time"
+            category: Either "creator_profile" or "creator_content"
+            creator_handle: Instagram profile handle
+            content_id: Post/Reel ID or URL slug, or None for profile
+            duration_ms: Duration in integer milliseconds
+            status: "success" or "error"
+            error_type: Exception class name or None
+        """
+        consumer_id = getattr(self.config.main, 'consumer_id', None)
+        log_entry = {
+            "event": event,
+            "category": category,
+            "creator_handle": creator_handle,
+            "content_id": content_id,
+            "pipeline": "igscraper",
+            "duration_ms": duration_ms,
+            "status": status,
+            "error_type": error_type,
+            "consumer_id": consumer_id
+        }
+        logger.info(json.dumps(log_entry, ensure_ascii=False))
 
 def run_pipeline(config_path: str, dry_run: bool = False):
     """Legacy function wrapper to instantiate and run the Pipeline class."""

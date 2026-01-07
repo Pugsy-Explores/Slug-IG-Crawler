@@ -9,7 +9,8 @@ import json
 import pickle
 import random
 import traceback
-from typing import Iterator, Dict, List, Any
+from typing import Iterator, Dict, List, Any, Optional
+from urllib.parse import urlparse
 
 from pathlib import Path
 from datetime import datetime, timezone
@@ -752,6 +753,31 @@ class SeleniumBackend(Backend):
             - (None, error_dict) on failure.
             - (None, None) if no browser windows are left.
         """
+        # Timing: Start total time (just before opening the post tab)
+        total_time_start = time.perf_counter()
+        active_time_start = time.perf_counter()
+        active_time_accumulated = 0.0
+        error_type = None
+        status = "success"
+        
+        # Extract content_id and creator_handle
+        post_shortcode = extract_instagram_shortcode(post_url)
+        content_id = post_shortcode if post_shortcode else post_url
+        
+        # Get creator_handle: prefer target_profile, fallback to extracting from URL
+        creator_handle = getattr(self.config.main, 'target_profile', None)
+        if not creator_handle:
+            # Try to extract from URL (format: /username/p/... or /username/reel/...)
+            try:
+                parsed = urlparse(post_url)
+                parts = [p for p in parsed.path.strip("/").split("/") if p]
+                if len(parts) > 0 and parts[0] not in ["p", "reel"]:
+                    creator_handle = parts[0]
+                else:
+                    creator_handle = getattr(self.config.main, 'run_name_for_url_file', 'unknown')
+            except Exception:
+                creator_handle = getattr(self.config.main, 'run_name_for_url_file', 'unknown')
+        
         try:
             # switch to the new tab
             self.driver.switch_to.window(tab_handle)
@@ -760,11 +786,21 @@ class SeleniumBackend(Backend):
             # del self.driver.requests  # Clear any previous requests to avoid memory bloat
             logger.info(f"Switched to tab {tab_handle} for post {post_index} ({post_url}). Refreshing page.")
             # self.driver.refresh()
+            
+            # Active time: tab switch
+            active_time_end = time.perf_counter()
+            active_time_accumulated += (active_time_end - active_time_start)
+            
+            # Sleep (excluded from active time)
             random_delay(2.4, 4.0)  # Wait for at least 3 seconds for the page to load after refresh.
-            post_shortcode = extract_instagram_shortcode(post_url)
+            active_time_start = time.perf_counter()
             # Anti Bot measure
             if random.choice([0,0,1,1,1,1,1]) == 0:
                 human_mouse_move(self.driver,duration=self.config.main.human_mouse_move_duration)
+                # Active time: human_mouse_move
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
+                active_time_start = time.perf_counter()
 
             post_id = f"post_{post_index}"
             post_data = {
@@ -782,10 +818,25 @@ class SeleniumBackend(Backend):
                 try:
                     post_data["post_comments_gif"] = self._extract_comments_from_captured_requests(self.driver, self.config) or []
                     logger.info(f"Captured-requests comment extraction returned {len(post_data['post_comments_gif'])} items for {post_url}")
+                    # Active time: comment extraction
+                    active_time_end = time.perf_counter()
+                    active_time_accumulated += (active_time_end - active_time_start)
                 except Exception as e:
                     logger.error(f"Captured-requests comment extraction failed for {post_url}: {e}")
                     logger.debug(traceback.format_exc())
+                    # Active time: failed extraction attempt
+                    active_time_end = time.perf_counter()
+                    active_time_accumulated += (active_time_end - active_time_start)
 
+                # Emit timing logs before returning
+                total_time_end = time.perf_counter()
+                total_time_ms = int((total_time_end - total_time_start) * 1000)
+                active_time_ms = int(active_time_accumulated * 1000)
+                if active_time_ms > total_time_ms:
+                    active_time_ms = total_time_ms
+                self._emit_timing_log("pipeline_total_time", "creator_content", creator_handle, content_id, total_time_ms, status, error_type)
+                self._emit_timing_log("pipeline_active_time", "creator_content", creator_handle, content_id, active_time_ms, status, error_type)
+                
                 return post_data, None
 
             # Title / metadata
@@ -797,9 +848,17 @@ class SeleniumBackend(Backend):
                     handle_slug = get_first_link_href_base(self.driver)
                 logger.info(f"Extracting title data for {post_url} with handle {handle_slug}")
                 post_data["post_title"] = self.get_post_title_data(handle_slug) or ""
+                # Active time: title extraction
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
+                active_time_start = time.perf_counter()
             except Exception as e:
                 logger.error(f"Title extraction failed for {post_url}: {e}")
                 logger.debug(traceback.format_exc())
+                # Active time: failed extraction attempt
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
+                active_time_start = time.perf_counter()
 
             # Media: Extract media - videos/images
             try:
@@ -817,32 +876,71 @@ class SeleniumBackend(Backend):
                                     run_script=True, redact_cookies=True)
                     logger.info(f"Dispatched {len(video_data_list)} video download tasks.")
                     post_data["video_download_tasks"].append(task.id)
-
+                # Active time: media extraction
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
+                active_time_start = time.perf_counter()
             except Exception as e:
                 logger.error(f"Images extraction failed for {post_url}: {e}")
                 logger.debug(traceback.format_exc())
+                # Active time: failed extraction attempt
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
+                active_time_start = time.perf_counter()
             # Likes / other sections
             try:
                 post_data["likes"] = get_section_with_highest_likes(self.driver) or {}
                 logger.info(f"Likes extraction successful for {post_url}")
+                # Active time: likes extraction
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
+                active_time_start = time.perf_counter()
             except Exception as e:
                 logger.error(f"Likes extraction failed for {post_url}: {e}")
                 logger.debug(traceback.format_exc())
+                # Active time: failed extraction attempt
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
+                active_time_start = time.perf_counter()
             
             # comments
             try:
                 post_data["post_comments_gif"] = scrape_comments_with_gif(self.driver,self.config) or []
+                # Active time: comments extraction
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
             except Exception as e:
                 logger.error(f"Comments extraction with gif failed for {post_url}: {e}")
                 logger.debug(traceback.format_exc())
+                # Active time: failed extraction attempt
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
 
             return post_data, None
 
         except Exception as e:
+            status = "error"
+            error_type = type(e).__name__
             logger.exception(f"Unexpected error while scraping post {post_index} ({post_url}): {e}")
             error_data = {"index": post_index, "reason": str(e), "profile": self.config.main.target_profile}
+            # Accumulate any remaining active time
+            active_time_end = time.perf_counter()
+            active_time_accumulated += (active_time_end - active_time_start)
             return None, error_data
         finally:
+            # Calculate final timings
+            total_time_end = time.perf_counter()
+            total_time_ms = int((total_time_end - total_time_start) * 1000)
+            active_time_ms = int(active_time_accumulated * 1000)
+            
+            # Ensure active_time <= total_time
+            if active_time_ms > total_time_ms:
+                active_time_ms = total_time_ms
+            
+            # Emit timing logs
+            self._emit_timing_log("pipeline_total_time", "creator_content", creator_handle, content_id, total_time_ms, status, error_type)
+            self._emit_timing_log("pipeline_active_time", "creator_content", creator_handle, content_id, active_time_ms, status, error_type)
+            
             self._close_tab_and_switch_back(tab_handle, main_window_handle, debug)
             # Check if any windows are left open after closing.
             if not self.driver.window_handles:
@@ -965,6 +1063,33 @@ class SeleniumBackend(Backend):
             logger.info("Saved final scrape results.")
 
         return results
+
+    def _emit_timing_log(self, event: str, category: str, creator_handle: str | None, content_id: str | None, duration_ms: int, status: str, error_type: str | None):
+        """
+        Emit a structured timing log event.
+        
+        Args:
+            event: Either "pipeline_total_time" or "pipeline_active_time"
+            category: Either "creator_profile" or "creator_content"
+            creator_handle: Instagram profile handle
+            content_id: Post/Reel ID or URL slug, or None for profile
+            duration_ms: Duration in integer milliseconds
+            status: "success" or "error"
+            error_type: Exception class name or None
+        """
+        consumer_id = getattr(self.config.main, 'consumer_id', None)
+        log_entry = {
+            "event": event,
+            "category": category,
+            "creator_handle": creator_handle,
+            "content_id": content_id,
+            "pipeline": "igscraper",
+            "duration_ms": duration_ms,
+            "status": status,
+            "error_type": error_type,
+            "consumer_id": consumer_id
+        }
+        logger.info(json.dumps(log_entry, ensure_ascii=False))
 
     def _close_tab_and_switch_back(self, tab_handle_to_close: str, main_window_handle: str, debug: bool):
         """
