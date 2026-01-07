@@ -169,15 +169,40 @@ class Pipeline:
     def _scrape_from_url_file(self) -> dict:
         """
         Handles the scraping logic for a list of URLs provided in a file.
-
-        Returns:
-            A dictionary containing the scraping results.
         """
-        run_name = self.config.main.run_name_for_url_file
-        urls_filepath = self.config.data.urls_filepath
+
+        # 1. Resolve run name
+        run_name = self.master_config.main.run_name_for_url_file
+        if not run_name:
+            logger.error("run_name_for_url_file must be set for URL mode")
+            return {}
+
+        datetime_now = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+
+        # 2. Clone config exactly like mode-1
+        driver_obj_ref = self.master_config._driver
+        self.master_config._driver = None
+        run_config = copy.deepcopy(self.master_config)
+        run_config._driver = driver_obj_ref
+        self.master_config._driver = driver_obj_ref
+
+        # 3. Set target_profile + expand paths
+        run_config.main.target_profile = run_name
+        substitutions = {
+            "date": datetime_now.split('_')[0],
+            "datetime": datetime_now,
+        }
+        expand_paths(run_config, substitutions)
+
         logger.info(f"--- Starting URL file scrape for run: {run_name} ---")
 
-        # Read URLs from the specified file
+        # 4. Rebind backend exactly like mode-1
+        self.backend.config = run_config
+        self.backend.profile_page.config = run_config
+        self.backend.start_screenshot_worker()
+
+        # 5. Read URL file from *expanded* path
+        urls_filepath = run_config.data.urls_filepath
         try:
             with open(urls_filepath, "r", encoding="utf-8") as f:
                 post_urls = [line.strip() for line in f if line.strip()]
@@ -186,28 +211,28 @@ class Pipeline:
             logger.error(f"URL file not found at: {urls_filepath}")
             return {}
 
-        # Create a specific config for this run
-        run_config = copy.deepcopy(self.config)
-        run_config.main.target_profile = run_name # Used for path expansion
-
-        # Update backend config and expand paths
-        self.backend.config = run_config
-        substitutions = {"target_profile": run_name}
-        expand_paths(run_config, substitutions)
-
-        # Filter out already processed URLs
-        processed = self.backend._load_processed_urls(run_config.data.metadata_path)
-        urls_to_scrape = [u for u in post_urls if u not in processed]
-        logger.info(f"Found {len(urls_to_scrape)} new URLs to scrape after filtering.")
-
-        if not urls_to_scrape:
+        if not post_urls:
             return {"scraped_posts": [], "skipped_posts": []}
 
+        # 6. Filter already-processed URLs (critical)
+        processed = self.backend._load_processed_urls(run_config.data.metadata_path)
+        urls_to_scrape = [u for u in post_urls if u not in processed]
+
+        if not urls_to_scrape:
+            logger.info("No new URLs to scrape after filtering.")
+            return {"scraped_posts": [], "skipped_posts": []}
+
+        # 7. Batch size logic (unchanged)
         batch_size = run_config.main.batch_size
         if run_config.main.randomize_batch:
             batch_size = random.randint(batch_size, batch_size + 4)
 
-        return self.backend.scrape_posts_in_batches(urls_to_scrape, batch_size=batch_size, save_every=run_config.main.save_every)
+        # 8. Scrape using the SAME backend path as mode-1
+        return self.backend.scrape_posts_in_batches(
+            urls_to_scrape,
+            batch_size=batch_size,
+            save_every=run_config.main.save_every
+        )
 
     def run(self) -> dict:
         """

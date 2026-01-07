@@ -6,6 +6,13 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 
 # ------------------------------------------------------------------
+# Ask for Instagram username (MANUAL, EXPLICIT)
+# ------------------------------------------------------------------
+IG_USERNAME = input("👉 Enter Instagram username for this session: ").strip()
+if not IG_USERNAME:
+    raise ValueError("Instagram username cannot be empty")
+
+# ------------------------------------------------------------------
 # Paths (PINNED)
 # ------------------------------------------------------------------
 CHROME_BINARY = (
@@ -76,16 +83,16 @@ try:
         raise RuntimeError("No cookies captured — login likely failed")
 
     # --------------------------------------------------------------
-    # Save cookies
+    # Save cookies (USERNAME-SCOPED PATH)
     # --------------------------------------------------------------
-    out_dir = Path("src/igscraper/cookies")
+    out_dir = Path("src/igscraper/cookies") / IG_USERNAME
     out_dir.mkdir(parents=True, exist_ok=True)
 
     filename = out_dir / f"cookies_chromium_linuxish_{int(time.time())}.json"
     with open(filename, "w") as f:
         json.dump(cookies, f, indent=2)
 
-    print(f"✅ {len(cookies)} cookies saved to {filename}")
+    print(f"✅ {len(cookies)} cookies saved for '{IG_USERNAME}' at {filename}")
 
 finally:
     driver.quit()
