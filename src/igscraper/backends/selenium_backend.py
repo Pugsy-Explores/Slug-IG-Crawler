@@ -268,7 +268,7 @@ class SeleniumBackend(Backend):
         if self.config.main.use_docker:
             chrome_bin = os.environ["CHROME_BIN"]
             chromedriver_bin = os.environ["CHROMEDRIVER_BIN"]
-            profile_dir = "/data/chrome-profile"
+            profile_dir = os.getenv("IGSCRAPER_CHROME_PROFILE","/data/chrome-profile")
             platform = "Linux x86_64"
 
             options.add_argument("--no-sandbox")
@@ -282,7 +282,7 @@ class SeleniumBackend(Backend):
                 "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
             )
             chromedriver_bin = "/opt/homebrew/bin/chromedriver"
-            profile_dir = "/Users/shang/.ig_chrome_profile"
+            profile_dir = os.getenv("IGSCRAPER_CHROME_PROFILE")
             platform = "Linux x86_64"  # intentionally Linux-like
 
             options.add_argument("--remote-debugging-pipe")

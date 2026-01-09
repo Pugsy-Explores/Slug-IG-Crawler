@@ -11,6 +11,8 @@ import random
 import traceback
 import time
 import json
+
+from dotenv import load_dotenv
 from .config import load_config, expand_paths, Config, ProfileTarget
 from .backends import SeleniumBackend
 from .logger import get_logger
@@ -20,6 +22,9 @@ from .models.common import MODEL_REGISTRY
 from .utils import capture_instagram_requests
 import pdb 
 logger = get_logger(__name__)
+
+load_dotenv()
+logger.info(f"THOR_WORKER_ID: {os.getenv('THOR_WORKER_ID')}")
 
 def attach_debugger_if_needed():
     if os.environ.get("DEBUG_ATTACH") == "1":
