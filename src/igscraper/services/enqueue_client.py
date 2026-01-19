@@ -35,10 +35,10 @@ class PostgresConfig:
     def from_env(cls) -> "PostgresConfig":
         return cls(
             host=os.environ.get("PUGSY_PG_HOST", "localhost"),
-            port=int(os.environ.get("PUGSY_PG_PORT", "5432")),
-            user=os.environ.get("PUGSY_PG_USER", "pugsy_user"),
-            password=os.environ.get("PUGSY_PG_PASSWORD", "pugsy_pass"),
-            database=os.environ.get("PUGSY_PG_DATABASE", "pugsy_ingestion"),
+            port=int(os.environ.get("PUGSY_PG_PORT", "5433")),
+            user=os.environ.get("PUGSY_PG_USER", "postgres"),
+            password=os.environ.get("PUGSY_PG_PASSWORD", ""),
+            database=os.environ.get("PUGSY_PG_DATABASE", ""),
         )
 
     def dsn(self) -> str:

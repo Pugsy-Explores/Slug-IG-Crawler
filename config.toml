@@ -65,7 +65,7 @@ max_comments = 10
 # If true, the browser will run in the background without a visible window.
 # Recommended: true for performance, false for debugging.
 headless = false
-enable_screenshots = false
+enable_screenshots = true
 use_docker = false
 # The minimum and maximum random delay (in seconds) between batches of requests.
 # This helps avoid rate-limiting. Recommended: 2-5 seconds.
