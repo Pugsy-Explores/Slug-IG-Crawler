@@ -354,8 +354,9 @@ class Pipeline:
             elif self.master_config.main.target_profiles:
                 # Mode 1: Scrape target profiles
                 self.master_config.main.mode = 1
-                for profile_target in self.master_config.main.target_profiles:
-                    logger.info(f"--- Starting scrape for profile: {profile_target.name} ---")
+                total_profiles = len(self.master_config.main.target_profiles)
+                for idx, profile_target in enumerate(self.master_config.main.target_profiles, start=1):
+                    logger.info(f"--- Starting scrape for profile: {profile_target.name} ({idx}/{total_profiles}) ---")
                     self.all_results[profile_target.name] = self._scrape_single_profile(profile_target)
             else:
                 logger.warning("No target profiles or valid URL file provided in the configuration. Nothing to do.")
