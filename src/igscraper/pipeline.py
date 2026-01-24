@@ -236,6 +236,8 @@ class Pipeline:
             with open(urls_filepath, "r", encoding="utf-8") as f:
                 raw_lines = [line.strip() for line in f if line.strip()]
             
+            logger.info(f"[Mode 2] URL file contents:\n" + "\n".join(raw_lines))
+            
             # Parse URLs with optional metadata (format: URL|max_comments=N)
             post_urls = []
             url_metadata = {}  # {url: {"max_comments": N}}
