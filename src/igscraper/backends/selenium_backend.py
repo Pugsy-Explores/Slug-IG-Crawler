@@ -1462,8 +1462,47 @@ class SeleniumBackend(Backend):
         """
         baseline_count = self.count_parsed_comments(config.data.post_entity_path)
 
-        container_info = find_comment_container(driver)
-        container = container_info.get("selector") if container_info else None
+        def get_valid_container(driver, max_retries=3):
+            """Get a valid container selector with retry logic."""
+            for attempt in range(max_retries):
+                container_info = find_comment_container(driver)
+                container = container_info.get("selector") if container_info else None
+                
+                if container:
+                    # Validate the selector exists
+                    try:
+                        driver.find_element(By.CSS_SELECTOR, container)
+                        logger.debug(f"Container selector validated successfully on attempt {attempt + 1}: {container}")
+                        return container
+                    except Exception as e:
+                        logger.debug(f"Container selector invalid on attempt {attempt + 1}: {e}")
+                        if attempt < max_retries - 1:
+                            time.sleep(1)  # Wait before retry
+                            continue
+                
+                # If no container found, try again
+                if attempt < max_retries - 1:
+                    logger.debug(f"No container found on attempt {attempt + 1}, retrying...")
+                    time.sleep(1)
+            
+            logger.warning("Could not find valid container after retries")
+            return None
+
+        # Solution 3: Wait for comments to be present before finding container
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.html-div"))
+            )
+            logger.debug("Comments container detected, proceeding with container discovery")
+        except Exception as e:
+            logger.warning(f"Comments not loaded within timeout, proceeding anyway: {e}")
+
+        # Solution 1: Get container with retry logic
+        container = get_valid_container(driver)
+        # Use fallback default selector if container discovery failed
+        if not container:
+            logger.warning("Container discovery failed, using fallback default selector")
+            container = "div.html-div"
         self.reply_expander = ReplyExpander.with_container(driver, container, max_clicks=5, is_headless=self.config.main.headless, base_pause_ms=600)
         total_clicked = 0
         MAX_CLICKS_ALLOWED = 10
