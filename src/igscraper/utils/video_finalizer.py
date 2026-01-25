@@ -299,6 +299,7 @@ def generate_video_name(
     consumer_id: Optional[str],
     profile_name: Optional[str] = None,
     run_name: Optional[str] = None,
+    worker_id: Optional[str] = None,
 ) -> Optional[str]:
     """
     Generate a deterministic video filename based on config values.
@@ -308,9 +309,10 @@ def generate_video_name(
         consumer_id: Consumer ID from config (may contain paths, will be sanitized)
         profile_name: Profile name (for mode 1, may contain paths, will be sanitized)
         run_name: Run name for URL file (for mode 2, may contain paths, will be sanitized)
+        worker_id: Optional worker ID to prefix the filename (will be sanitized)
 
     Returns:
-        Video filename string (e.g., "profile_consumer1_handle_20250106_120000.mp4") or None if required fields missing
+        Video filename string (e.g., "worker123_profile_consumer1_handle_20250106_120000.mp4") or None if required fields missing
     """
     if not consumer_id:
         logger.error("[video_finalizer] consumer_id is required for video naming")
@@ -318,6 +320,7 @@ def generate_video_name(
 
     # Sanitize all inputs to remove path separators and invalid characters
     consumer_id_safe = _sanitize_filename_component(consumer_id)
+    worker_id_safe = _sanitize_filename_component(worker_id) if worker_id else None
 
     # Generate UTC timestamp
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -328,7 +331,8 @@ def generate_video_name(
             logger.error("[video_finalizer] profile_name is required for PROFILE mode")
             return None
         profile_name_safe = _sanitize_filename_component(profile_name)
-        return f"profile_{consumer_id_safe}_{profile_name_safe}_{timestamp}.mp4"
+        base_name = f"profile_{consumer_id_safe}_{profile_name_safe}_{timestamp}.mp4"
+        return f"{worker_id_safe}_{base_name}" if worker_id_safe else base_name
     
     elif mode == 2:
         # POST mode
@@ -336,7 +340,8 @@ def generate_video_name(
             logger.error("[video_finalizer] run_name_for_url_file is required for POST mode")
             return None
         run_name_safe = _sanitize_filename_component(run_name)
-        return f"post_{consumer_id_safe}_{run_name_safe}_{timestamp}.mp4"
+        base_name = f"post_{consumer_id_safe}_{run_name_safe}_{timestamp}.mp4"
+        return f"{worker_id_safe}_{base_name}" if worker_id_safe else base_name
     
     else:
         logger.error(f"[video_finalizer] Unknown mode: {mode}")

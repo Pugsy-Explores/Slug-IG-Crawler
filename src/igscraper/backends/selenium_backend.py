@@ -651,6 +651,7 @@ class SeleniumBackend(Backend):
                 consumer_id=self.config.main.consumer_id,
                 profile_name=self.config.main.target_profile if self.config.main.mode == 1 else None,
                 run_name=self.config.main.run_name_for_url_file if self.config.main.mode == 2 else None,
+                worker_id=self.thor_worker_id,
             )
 
             if not video_name:
