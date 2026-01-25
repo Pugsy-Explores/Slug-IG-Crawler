@@ -99,6 +99,8 @@ class MainConfig(BaseSettings):
 
     fetch_replies: bool = True
     max_comments: int = 20
+    # Maximum number of consecutive batches with no new comments before stopping comment extraction
+    comment_no_new_retries: int = 3
     # Consumer ID for identifying the scraper instance in logs
     consumer_id: Optional[str] = None
 

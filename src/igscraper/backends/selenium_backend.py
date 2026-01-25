@@ -1526,7 +1526,7 @@ class SeleniumBackend(Backend):
         # self.config.main.registry.get_posts_data(self.config, self.config.data.post_page_data_key, data_type="post")
         prev_comment_count = 0
         end_comment_attempts = 0
-        MAX_END_COMMENT_ATTEMPTS = 3
+        MAX_END_COMMENT_ATTEMPTS = config.main.comment_no_new_retries
         while True:
             batch_index += 1
             logger.debug(f"Starting batch {batch_index}: performing {batch_scrolls} scroll loops.")
