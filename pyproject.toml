@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slug-ig-crawler"
-version = "2.2.24"
+version = "2.2.25"
 description = "Browser-based Instagram research tooling: Selenium scraper with optional GCS and PostgreSQL."
 readme = "README.md"
 license = "Apache-2.0"
@@ -78,7 +78,7 @@ include = ["igscraper*"]
 exclude = ["igscraper.tests*"]
 
 [tool.setuptools.package-data]
-igscraper = ["config.example.toml", "flatten_schema.yaml"]
+igscraper = ["config.example.toml", "flatten_schema.yaml", "postgres_setup.sql"]
 
 [tool.pytest.ini_options]
 testpaths = ["src/igscraper/tests"]

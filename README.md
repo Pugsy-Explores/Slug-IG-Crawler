@@ -293,12 +293,13 @@ Slug-Ig-Crawler   # same as run; uses ~/.slug/config.toml when present
 - `bootstrap`
   - `--force` (optional): re-download Chrome + ChromeDriver even if cache already exists.
   - `--force-config` (optional): overwrite `~/.slug/config.toml` with bundled sample.
-  - `--setup-postgres` (optional): run idempotent table/index creation using `scripts/postgres_setup.sql` and `PUGSY_PG_*` env vars.
+  - `--setup-postgres` / `--no-setup-postgres`: Postgres setup is enabled by default; use `--no-setup-postgres` to skip.
   - `--postgres-sql-file <path>` (optional): override SQL file path used by `--setup-postgres`.
   - Example:
     - `Slug-Ig-Crawler bootstrap --force`
     - `Slug-Ig-Crawler bootstrap --force-config`
-    - `Slug-Ig-Crawler bootstrap --setup-postgres`
+    - `Slug-Ig-Crawler bootstrap`  # runs browser + config + postgres setup by default
+    - `Slug-Ig-Crawler bootstrap --no-setup-postgres`
     - `Slug-Ig-Crawler bootstrap --setup-postgres --postgres-sql-file ./scripts/postgres_setup.sql`
 
 - `show-config`

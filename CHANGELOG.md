@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.25] - 2026-04-08
+
+### Changed
+- Bootstrap now runs browser + config + Postgres setup by default.
+- Added `--no-setup-postgres` to skip DB setup explicitly.
+- Fixed installed-environment Postgres setup by bundling `postgres_setup.sql` inside the package and using it as default source.
+
 ## [2.2.24] - 2026-04-08
 
 ### Added

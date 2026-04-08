@@ -223,10 +223,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     b.add_argument(
         "--setup-postgres",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help=(
-            "Run scripts/postgres_setup.sql against Postgres using PUGSY_PG_* env vars; "
-            "idempotent via CREATE TABLE/INDEX IF NOT EXISTS."
+            "Run postgres table/index setup using bundled postgres_setup.sql and "
+            "PUGSY_PG_* env vars (default: enabled). Use --no-setup-postgres to skip."
         ),
     )
     b.add_argument(

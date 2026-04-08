@@ -139,17 +139,37 @@ def _default_postgres_setup_sql_path() -> Path:
     return Path(__file__).resolve().parents[2] / "scripts" / "postgres_setup.sql"
 
 
+def _load_default_postgres_setup_sql() -> tuple[Optional[str], str]:
+    """
+    Load default postgres setup SQL text.
+
+    Priority:
+    1) Bundled package data: igscraper/postgres_setup.sql (works after pip install)
+    2) Repository fallback: scripts/postgres_setup.sql (editable/source runs)
+    """
+    try:
+        from importlib.resources import files
+
+        p = files("igscraper").joinpath("postgres_setup.sql")
+        return p.read_text(encoding="utf-8"), "package:igscraper/postgres_setup.sql"
+    except Exception:
+        pass
+
+    fallback = _default_postgres_setup_sql_path()
+    if fallback.is_file():
+        return fallback.read_text(encoding="utf-8"), str(fallback)
+    return None, f"{fallback} (missing)"
+
+
 def _run_postgres_setup(
     *,
-    sql_path: Path,
+    sql_text: str,
+    sql_source: str,
     progress: Optional[Callable[[str], None]] = None,
 ) -> tuple[bool, str]:
     def _emit(msg: str) -> None:
         if progress:
             progress(msg)
-
-    if not sql_path.is_file():
-        return False, f"Postgres setup SQL file not found: {sql_path}"
 
     host = (os.environ.get("PUGSY_PG_HOST") or "localhost").strip()
     port = int((os.environ.get("PUGSY_PG_PORT") or "5433").strip())
@@ -167,10 +187,9 @@ def _run_postgres_setup(
         "Postgres setup target -> "
         f"host={host} port={port} db={database} user={user}"
     )
-    _emit(f"Loading SQL from {sql_path}")
-    sql_text = sql_path.read_text(encoding="utf-8")
+    _emit(f"Loading SQL from {sql_source}")
     if not sql_text.strip():
-        return False, f"Postgres setup SQL is empty: {sql_path}"
+        return False, f"Postgres setup SQL is empty: {sql_source}"
 
     dsn = (
         f"host={host} port={port} dbname={database} "
@@ -202,7 +221,7 @@ def run_bootstrap(
     *,
     force_browser: bool = False,
     force_config: bool = False,
-    setup_postgres: bool = False,
+    setup_postgres: bool = True,
     postgres_sql_file: Optional[str] = None,
     progress: Optional[Callable[[str], None]] = None,
 ) -> BootstrapResult:
@@ -248,10 +267,39 @@ def run_bootstrap(
         pg_msg = ""
         if setup_postgres:
             _emit("Running Postgres setup...")
+            sql_text: Optional[str] = None
+            sql_source = ""
+            if postgres_sql_file:
+                sql_path = Path(postgres_sql_file).expanduser().resolve()
+                if not sql_path.is_file():
+                    pg_ok, pg_msg = False, f"Postgres setup SQL file not found: {sql_path}"
+                else:
+                    sql_text = sql_path.read_text(encoding="utf-8")
+                    sql_source = str(sql_path)
+            else:
+                sql_text, sql_source = _load_default_postgres_setup_sql()
+                if sql_text is None:
+                    pg_ok, pg_msg = False, f"Postgres setup SQL file not found: {sql_source}"
+
+            if pg_ok is False:
+                _emit(pg_msg)
+                return BootstrapResult(
+                    ok=False,
+                    message=pg_msg,
+                    cft_platform=cft_platform,
+                    chrome_version="(cached)",
+                    chrome_bin=chrome_bin,
+                    chromedriver_bin=driver_bin,
+                    config_path=cfg_path,
+                    config_written=cfg_written,
+                    postgres_setup_attempted=True,
+                    postgres_setup_ok=False,
+                    postgres_message=pg_msg,
+                )
+
             pg_ok, pg_msg = _run_postgres_setup(
-                sql_path=Path(postgres_sql_file).expanduser().resolve()
-                if postgres_sql_file
-                else _default_postgres_setup_sql_path(),
+                sql_text=sql_text or "",
+                sql_source=sql_source,
                 progress=progress,
             )
             _emit(pg_msg)
@@ -360,10 +408,39 @@ def run_bootstrap(
     pg_msg = ""
     if setup_postgres:
         _emit("Running Postgres setup...")
+        sql_text: Optional[str] = None
+        sql_source = ""
+        if postgres_sql_file:
+            sql_path = Path(postgres_sql_file).expanduser().resolve()
+            if not sql_path.is_file():
+                pg_ok, pg_msg = False, f"Postgres setup SQL file not found: {sql_path}"
+            else:
+                sql_text = sql_path.read_text(encoding="utf-8")
+                sql_source = str(sql_path)
+        else:
+            sql_text, sql_source = _load_default_postgres_setup_sql()
+            if sql_text is None:
+                pg_ok, pg_msg = False, f"Postgres setup SQL file not found: {sql_source}"
+
+        if pg_ok is False:
+            _emit(pg_msg)
+            return BootstrapResult(
+                ok=False,
+                message=pg_msg,
+                cft_platform=cft_platform,
+                chrome_version=version,
+                chrome_bin=chrome_bin,
+                chromedriver_bin=driver_bin,
+                config_path=cfg_path,
+                config_written=cfg_written,
+                postgres_setup_attempted=True,
+                postgres_setup_ok=False,
+                postgres_message=pg_msg,
+            )
+
         pg_ok, pg_msg = _run_postgres_setup(
-            sql_path=Path(postgres_sql_file).expanduser().resolve()
-            if postgres_sql_file
-            else _default_postgres_setup_sql_path(),
+            sql_text=sql_text or "",
+            sql_source=sql_source,
             progress=progress,
         )
         _emit(pg_msg)
