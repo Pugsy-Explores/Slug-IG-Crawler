@@ -3,15 +3,14 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from typing import Literal, Optional, Tuple
-import logging
 from pathlib import Path
 
 from google.cloud import storage 
 from igscraper.services.enqueue_client import FileEnqueuer
-
 from igscraper.services.sorter import sort_jsonl_folder
+from igscraper.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -44,11 +43,22 @@ class UploadAndEnqueue:
         gcs_config: GcsUploadConfig,
         enqueuer: FileEnqueuer,
         storage_client: Optional[storage.Client] = None,
+        *,
+        push_to_gcs: int = 1,
     ) -> None:
         self._cfg = gcs_config
         self._enqueuer = enqueuer
-        self._storage_client = storage_client or storage.Client()
-        logger.info("[upload_enqueue] Initialized with bucket: %s", self._cfg.bucket_name)
+        self._push_to_gcs = 1 if push_to_gcs else 0
+        # Avoid instantiating google.cloud.storage when only local enqueue is used (no GCP creds needed).
+        if self._push_to_gcs:
+            self._storage_client = storage_client or storage.Client()
+        else:
+            self._storage_client = storage_client
+        logger.debug(
+            "[upload_enqueue] Initialized bucket=%s push_to_gcs=%s",
+            self._cfg.bucket_name,
+            self._push_to_gcs,
+        )
 
     def upload_and_enqueue(
         self,
@@ -62,10 +72,8 @@ class UploadAndEnqueue:
     ) -> str:
         """
         1. Optionally sort the local file (writes <name>_sorted.jsonl next to it).
-        2. Derive GCS object name from the file actually uploaded.
-        3. Upload file to GCS.
-        4. Enqueue file path (gs://...).
-        5. Return the gs:// URI.
+        2. If push_to_gcs is 1: derive GCS object name, upload, enqueue gs:// URI, return gs:// URI.
+        3. If push_to_gcs is 0: skip GCS, enqueue absolute local path of the file (original or sorted), return that path.
 
         Args:
             local_path: local filename to upload
@@ -84,7 +92,7 @@ class UploadAndEnqueue:
         if sort_before_upload:
             try:
                 # Sort only the single file (non-recursive, pattern = filename)
-                logger.info("[upload_enqueue] Sorting before upload: %s", local_path)
+                logger.debug("[upload_enqueue] Sorting before upload: %s", local_path)
                 summary = sort_jsonl_folder(
                     path.parent,
                     key=sort_key,
@@ -99,7 +107,7 @@ class UploadAndEnqueue:
                 sorted_name = f"{path.stem}_sorted.jsonl"
                 candidate = path.with_name(sorted_name)
                 if candidate.exists() and summary.get("sorted", 0) > 0:
-                    logger.info("[upload_enqueue] Using sorted file: %s", str(candidate))
+                    logger.debug("[upload_enqueue] Using sorted file: %s", str(candidate))
                     to_upload_path = candidate
                 else:
                     # No sorted output produced; decide behaviour
@@ -115,11 +123,18 @@ class UploadAndEnqueue:
                 logger.warning("[upload_enqueue] Proceeding with original file despite sort error: %s", local_path)
                 to_upload_path = path
 
+        resolved_local = str(to_upload_path.resolve())
+
+        if self._push_to_gcs == 0:
+            self._enqueuer.enqueue_file(kind=kind, file_path=resolved_local)
+            logger.info("[upload_enqueue] Local-only enqueue %s -> %s", str(to_upload_path), resolved_local)
+            return resolved_local
+
         # Build GCS URI for the file we will upload
-        gcs_uri, object_name = self._build_gcs_uri(str(to_upload_path))
+        gcs_uri, object_name = self._build_gcs_uri(resolved_local)
 
         # Upload
-        self._upload_to_gcs(local_path=str(to_upload_path), object_name=object_name)
+        self._upload_to_gcs(local_path=resolved_local, object_name=object_name)
 
         # Enqueue the GCS uri
         self._enqueuer.enqueue_file(kind=kind, file_path=gcs_uri)
@@ -149,7 +164,7 @@ class UploadAndEnqueue:
             bucket = self._storage_client.bucket(self._cfg.bucket_name)
             blob = bucket.blob(object_name)
             blob.upload_from_filename(local_path)
-            logger.info("[upload_enqueue] Uploaded file to GCS: %s", f"gs://{self._cfg.bucket_name}/{object_name}")
+            logger.debug("[upload_enqueue] Uploaded file to GCS: %s", f"gs://{self._cfg.bucket_name}/{object_name}")
         except Exception as e:
             logger.error(f"[upload_enqueue] Failed to upload {local_path} to GCS: {e}")
             raise

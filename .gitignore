@@ -17,3 +17,6 @@ outputs/
 
 # cookies
 src/igscraper/cookies/
+# setuptools (in-tree egg-info from builds)
+src/*.egg-info/
+

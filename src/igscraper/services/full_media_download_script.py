@@ -1,20 +1,24 @@
-from celery import Celery
-from ..config import load_config
-from pathlib import Path
-import os
+"""
+In-process generation of bash scripts to download full video files (bytestart=0).
+
+Formerly dispatched via Celery; the pipeline now calls this directly.
+"""
+from __future__ import annotations
+
 import os
 import random
 import subprocess
-import logging
-from typing import List, Dict, Optional
-from ..logger import get_logger
-from ..utils import _set_bytestart_zero, _build_curl_for_entry_,classify_mp4_files,combine_audio_video
-from .celery_app import app
+from igscraper.logger import get_logger
+from igscraper.utils import (
+    _set_bytestart_zero,
+    _build_curl_for_entry_,
+    classify_mp4_files,
+)
 
 logger = get_logger(__name__)
 
-@app.task
-def write_and_run_full_download_script_(
+
+def write_and_run_full_download_script(
     video_results: list[dict],
     media_path: str,
     out_script_path: str = "download_full_media.sh",
@@ -29,7 +33,6 @@ def write_and_run_full_download_script_(
     Saves output media into `media_path`.
     Returns metadata dict. Optionally runs the script and classifies downloaded mp4 files.
     """
-
     media_dir = os.path.abspath(media_path)
     os.makedirs(media_dir, exist_ok=True)
 
@@ -37,7 +40,11 @@ def write_and_run_full_download_script_(
 
     for idx, item in enumerate(video_results):
         video_url = item.get("primaryUrl")
-        video_fn = item.get("filename").replace(".mp4", f"_{idx}.mp4") if item.get("filename") else f"video_{idx}.mp4"
+        video_fn = (
+            item.get("filename").replace(".mp4", f"_{idx}.mp4")
+            if item.get("filename")
+            else f"video_{idx}.mp4"
+        )
         headers = item.get("headers") or {}
 
         if video_url:
@@ -47,13 +54,12 @@ def write_and_run_full_download_script_(
             )
             commands.append(curl_cmd)
 
-    # craft script
     header = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
         f'cd "{media_dir}"',
         'echo "Starting full-file downloads (bytestart=0)..."',
-        ""
+        "",
     ]
     body = []
     for i, cmd in enumerate(commands, start=1):
@@ -71,12 +77,12 @@ def write_and_run_full_download_script_(
     if make_executable:
         os.chmod(out_script_path, 0o755)
 
-    result = {
+    result: dict = {
         "script_path": os.path.abspath(out_script_path),
         "commands_written": commands,
         "media_dir": media_dir,
         "run": None,
-        "classification": None
+        "classification": None,
     }
 
     if run_script:
@@ -84,13 +90,13 @@ def write_and_run_full_download_script_(
             ["bash", result["script_path"]],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
         )
         stdout, stderr = proc.communicate()
         result["run"] = {
             "returncode": proc.returncode,
             "stdout": stdout,
-            "stderr": stderr
+            "stderr": stderr,
         }
 
         if proc.returncode != 0:
@@ -98,7 +104,6 @@ def write_and_run_full_download_script_(
             if stderr:
                 logger.error("stderr:\n%s", stderr.strip())
         else:
-            # classify only if download script succeeded
             classification = classify_mp4_files(media_path)
             result["classification"] = classification
             logger.info("Classified downloaded mp4 files: %s", classification)

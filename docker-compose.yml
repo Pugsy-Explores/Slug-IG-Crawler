@@ -1,35 +1,18 @@
-version: "3.9"
+# Canonical compose for local/manual runs. Orchestrators (e.g. Thor) use their own
+# `docker compose -f …` path via DOCKER_COMPOSE_FILE; they typically run:
+#   docker compose run --rm -v <workspace>:/job Slug-Ig-Crawler \
+#     Slug-Ig-Crawler --config /job/config.toml
+#
+# Service name `Slug-Ig-Crawler` should stay aligned with integration defaults.
+# Optional: `cp .env.example .env` and use `docker compose --env-file .env ...` for extra vars.
 
 services:
-  igscraper:
-    image: igscraper
-    platform: linux/amd64
+  Slug-Ig-Crawler:
     build: .
-    
-    container_name: igscraper
-    restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-      - "hub.docker.internal:host-gateway"
-    volumes:
-      - ./:/app
-      - ./secrets/gcs-sa.json:/var/secrets/sa.json:ro
-      - ./data/chrome-profile:/data/chrome-profile
-      - ./outputs:/opt/pugsy/outputs
-      - ./config.toml:/app/config.toml:ro
-    environment:
-      # - DEBUG_ATTACH=1
-      - use_docker=true
-      - PYTHONPATH=/app/src
-      - ENV=development
-      - PUGSY_PG_HOST=hub.docker.internal
-      - GOOGLE_APPLICATION_CREDENTIALS=/var/secrets/sa.json
-      - CHROME_BIN=/opt/chrome-linux64/chrome
-      - CHROMEDRIVER_BIN=/opt/chromedriver-linux64/chromedriver
+    image: slug-ig-crawler:local
     shm_size: 2gb
-
-    mem_limit: 4g
-    mem_reservation: 2g
-    ports: # only for testing purpose, remove in prod
-      - "5678:5678"
-
+    environment:
+      PYTHONPATH: /app/src
+      CHROME_BIN: /opt/chrome-linux64/chrome
+      CHROMEDRIVER_BIN: /opt/chromedriver-linux64/chromedriver
+    working_dir: /app

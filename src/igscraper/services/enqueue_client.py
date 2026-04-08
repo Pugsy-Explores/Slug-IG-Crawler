@@ -6,10 +6,10 @@ from datetime import datetime, timezone
 from typing import Literal, Optional
 
 import psycopg
-import logging
 from dotenv import load_dotenv
+from igscraper.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 load_dotenv(dotenv_path=os.environ.get("ENV_FILE", ".env"), override=False)
 
 def log_pg_env():
@@ -35,10 +35,17 @@ class PostgresConfig:
     def from_env(cls) -> "PostgresConfig":
         return cls(
             host=os.environ.get("PUGSY_PG_HOST", "localhost"),
-            port=int(os.environ.get("PUGSY_PG_PORT", "5432")),
-            user=os.environ.get("PUGSY_PG_USER", "pugsy_user"),
-            password=os.environ.get("PUGSY_PG_PASSWORD", "pugsy_pass"),
-            database=os.environ.get("PUGSY_PG_DATABASE", "pugsy_ingestion"),
+            port=int(os.environ.get("PUGSY_PG_PORT", "5433")),
+            user=os.environ.get("PUGSY_PG_USER", "postgres"),
+            password=os.environ.get("PUGSY_PG_PASSWORD", ""),
+            database=os.environ.get("PUGSY_PG_DATABASE", ""),
+        )
+
+    def __repr__(self) -> str:
+        """Safe string representation that redacts password."""
+        return (
+            f"PostgresConfig(host='{self.host}', port={self.port}, "
+            f"user='{self.user}', password='***', database='{self.database}')"
         )
 
     def dsn(self) -> str:
@@ -56,7 +63,10 @@ class FileEnqueuer:
     - kind="post"   -> inserts into crawled_posts
     - kind="comment"-> inserts into crawled_comments
 
-    Schema assumed (no shortcode):
+    `file_path` is either a `gs://...` URI (when uploads use GCS) or an absolute
+    local path (when `[main].push_to_gcs` is 0).
+
+    Schema assumed (includes thor_worker_id):
 
         CREATE TABLE crawled_posts (
             id              serial primary key,
@@ -65,7 +75,8 @@ class FileEnqueuer:
             is_ingested     boolean not null default false,
             ingest_attempts int not null default 0,
             last_ingested_at timestamptz,
-            last_error      text
+            last_error      text,
+            thor_worker_id  text not null
         );
 
         -- same for crawled_comments
@@ -73,7 +84,8 @@ class FileEnqueuer:
 
     def __init__(self, pg_config: PostgresConfig) -> None:
         self._pg_config = pg_config
-        logger.info("[FileEnqueuer] Initialized with Postgres host: %s, database: %s", pg_config.host, pg_config.database)
+        self.thor_worker_id: str | None = None  # Set by backend after initialization
+        logger.debug("[FileEnqueuer] Initialized with Postgres host: %s, database: %s", pg_config.host, pg_config.database)
 
     def enqueue_file(
         self,
@@ -88,14 +100,24 @@ class FileEnqueuer:
         if kind not in ("post", "comment"):
             raise ValueError(f"kind must be 'post' or 'comment', got: {kind}")
 
+        # Safety check: assert thor_worker_id is present and non-empty
+        if not self.thor_worker_id or self.thor_worker_id.strip() == '':
+            error_msg = (
+                f"thor_worker_id is missing or empty in FileEnqueuer. "
+                f"Cannot insert {kind} file '{file_path}' without worker ID. "
+                f"This indicates a configuration error."
+            )
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
         table = "crawled_posts" if kind == "post" else "crawled_comments"
         ts = created_at or datetime.now(timezone.utc)
 
         sql = f"""
-            INSERT INTO {table} (file_path, created_at, is_ingested, ingest_attempts)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO {table} (file_path, created_at, is_ingested, ingest_attempts, thor_worker_id)
+            VALUES (%s, %s, %s, %s, %s)
         """
-        params = (file_path, ts, False, 0)
+        params = (file_path, ts, False, 0, self.thor_worker_id)
 
         dsn = self._pg_config.dsn()
 
@@ -103,4 +125,4 @@ class FileEnqueuer:
             with conn.cursor() as cur:
                 cur.execute(sql, params)
             conn.commit()
-        logger.info("[FileEnqueuer] Enqueued file '%s' into table '%s'", file_path, table)
+        logger.info("[FileEnqueuer] Enqueued file '%s' into table '%s' with thor_worker_id='%s'", file_path, table, self.thor_worker_id)

@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slug-ig-crawler"
+version = "2.0.2"
+description = "Browser-based Instagram research tooling: Selenium scraper with optional GCS and PostgreSQL."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [{ name = "Pugsy Explores" }]
+keywords = ["instagram", "selenium", "scraper", "research"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Internet :: WWW/HTTP :: Browsers",
+]
+dependencies = [
+  # selenium-wire (via mitmproxy) imports blinker._saferef; removed in blinker 1.6+
+  "blinker>=1.5,<1.6",
+  "numpy>=1.24",
+  "pillow>=10",
+  "pydantic>=2.11,<3",
+  "pydantic-settings>=2.10,<3",
+  "psycopg[binary]>=3.2",
+  "python-dotenv>=1.0",
+  "pyyaml>=6",
+  "requests>=2.31",
+  "selenium>=4.35",
+  "selenium-wire>=5.1",
+  "setuptools>=70,<81",
+  "toml>=0.10",
+  "google-cloud-storage>=2.19",
+  "webdriver-manager>=4.0",
+]
+
+[project.optional-dependencies]
+video = [
+  "imageio>=2.30",
+  "imageio-ffmpeg>=0.4",
+]
+json5 = ["json5>=0.9"]
+all = [
+  "imageio>=2.30",
+  "imageio-ffmpeg>=0.4",
+  "json5>=0.9",
+]
+dev = [
+  "build>=1.2",
+  "pytest>=8.0",
+  "twine>=5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Pugsy-Explores/Slug-IG-Crawler"
+Repository = "https://github.com/Pugsy-Explores/Slug-IG-Crawler"
+Documentation = "https://github.com/Pugsy-Explores/Slug-IG-Crawler#readme"
+
+[project.scripts]
+"Slug-Ig-Crawler" = "igscraper.cli:main"
+igscraper = "igscraper.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["igscraper*"]
+exclude = ["igscraper.tests*"]
+
+[tool.setuptools.package-data]
+igscraper = ["config.example.toml", "flatten_schema.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["src/igscraper/tests"]
+pythonpath = ["src"]
+addopts = "-q"

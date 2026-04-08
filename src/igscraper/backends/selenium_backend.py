@@ -9,7 +9,8 @@ import json
 import pickle
 import random
 import traceback
-from typing import Iterator, Dict, List, Any
+from typing import Iterator, Dict, List, Any, Optional
+from urllib.parse import urlparse
 
 from pathlib import Path
 from datetime import datetime, timezone
@@ -36,6 +37,7 @@ from ..pages.profile_page import ProfilePage
 from ..logger import get_logger
 
 from igscraper.chrome import patch_driver
+from igscraper.paths import get_cached_browser_binaries
 from igscraper.utils import (
     HumanScroller,
     click_all_reply_buttons_gently,
@@ -58,14 +60,19 @@ from igscraper.utils import (
     set_reel_volume,
     update_post_entity_path,
     write_and_run_curl_script,
-    write_and_run_full_download_script,
     get_shortcode_web_info,
     list_logged_urls,
     get_first_link_href_base,
     classify_mp4_files,
     unmute_if_muted
 )
-from igscraper.mycelery.tasks import write_and_run_full_download_script_
+from igscraper.utils.video_finalizer import (
+    generate_video_from_screenshots,
+    upload_video_to_gcs,
+    cleanup_local_files,
+    generate_video_name,
+)
+from igscraper.services.full_media_download_script import write_and_run_full_download_script
 from igscraper.services.enqueue_client import PostgresConfig, FileEnqueuer
 from igscraper.services.upload_enqueue import GcsUploadConfig, UploadAndEnqueue
 
@@ -75,6 +82,17 @@ import subprocess
 
 
 logger = get_logger(__name__)
+
+# Default local (macOS) paths when env and optional config omit binaries.
+_DEFAULT_LOCAL_CHROME_BIN = (
+    "/Users/shang/my_work/ig_profile_scraper/"
+    "chrome-mac-arm64/"
+    "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+)
+_DEFAULT_LOCAL_CHROMEDRIVER_BIN = "/opt/homebrew/bin/chromedriver"
+# Dockerfile ENV defaults when use_docker=true and CHROME_* env not set.
+_DOCKER_CHROME_BIN = "/opt/chrome-linux64/chrome"
+_DOCKER_CHROMEDRIVER_BIN = "/opt/chromedriver-linux64/chromedriver"
 
 
 # ⚠️ Suspicious navigation: chrome://new-tab-page/ patch it too
@@ -125,11 +143,20 @@ class SeleniumBackend(Backend):
         self.rate_limit_attempts = 0 
         self.global_seen_comment_ids: set[str] = set()
         self.scroller = None
+        # thor_worker_id will be set by Pipeline after initialization
+        self.thor_worker_id: str | None = None
         pg_cfg = PostgresConfig.from_env()
-        logger.info(f"Postgres config: {pg_cfg}")
+        logger.debug(f"Postgres config: {pg_cfg}")
         enqueuer = FileEnqueuer(pg_cfg)
+        # thor_worker_id will be set by Pipeline after initialization
+        # We'll set it on enqueuer when thor_worker_id is available
+        self._enqueuer = enqueuer
         gcs_cfg = GcsUploadConfig(bucket_name=self.config.main.gcs_bucket_name)
-        self.uploader = UploadAndEnqueue(gcs_cfg, enqueuer)
+        self.uploader = UploadAndEnqueue(
+            gcs_cfg,
+            enqueuer,
+            push_to_gcs=self.config.main.push_to_gcs,
+        )
         self._state_file = "rate_limit_state.json"  # persistent file
         self._load_rate_limit_state()
         self.COMMENT_MODEL_KEYS = {
@@ -141,6 +168,45 @@ class SeleniumBackend(Backend):
             r"(comment).*?(?:\$\$pk|\$\$id|_pk|_id|\.pk|\.id)$",
             re.IGNORECASE,
         )
+
+    def _resolve_browser_binaries(self) -> tuple[str, str]:
+        """
+        Chrome + ChromeDriver paths. CHROME_BIN and CHROMEDRIVER_BIN always win when set.
+
+        If unset: Docker uses image paths; local uses optional main.chrome_binary_path /
+        main.chromedriver_binary_path then built-in macOS defaults.
+        """
+        m = self.config.main
+
+        def _strip_or_none(val: Optional[str]) -> Optional[str]:
+            if val is None:
+                return None
+            t = val.strip()
+            return t or None
+
+        chrome = os.environ.get("CHROME_BIN")
+        driver = os.environ.get("CHROMEDRIVER_BIN")
+
+        if self.config.main.use_docker:
+            chrome = chrome or _DOCKER_CHROME_BIN
+            driver = driver or _DOCKER_CHROMEDRIVER_BIN
+        else:
+            chrome = chrome or _strip_or_none(getattr(m, "chrome_binary_path", None))
+            driver = driver or _strip_or_none(getattr(m, "chromedriver_binary_path", None))
+            if not chrome or not driver:
+                c_cached, d_cached = get_cached_browser_binaries()
+                if not chrome and c_cached:
+                    chrome = str(c_cached)
+                if not driver and d_cached:
+                    driver = str(d_cached)
+            chrome = chrome or _DEFAULT_LOCAL_CHROME_BIN
+            driver = driver or _DEFAULT_LOCAL_CHROMEDRIVER_BIN
+
+        logger.info(
+            "Browser binaries (CHROME_BIN/CHROMEDRIVER_BIN override when set): "
+            f"chrome={chrome!r}, chromedriver={driver!r}"
+        )
+        return chrome, driver
 
     # def startOg(self):
     #     """
@@ -251,12 +317,10 @@ class SeleniumBackend(Backend):
 
 
         # --------------------------------------------------
-        # Environment-specific paths
+        # Environment-specific paths (CHROME_BIN / CHROMEDRIVER_BIN respected in all modes)
         # --------------------------------------------------
         if self.config.main.use_docker:
-            chrome_bin = os.environ["CHROME_BIN"]
-            chromedriver_bin = os.environ["CHROMEDRIVER_BIN"]
-            profile_dir = "/data/chrome-profile"
+            profile_dir = os.getenv("IGSCRAPER_CHROME_PROFILE","/tmp/chrome-profile")
             platform = "Linux x86_64"
 
             options.add_argument("--no-sandbox")
@@ -264,16 +328,33 @@ class SeleniumBackend(Backend):
             options.add_argument("--disable-gpu")
 
         else:
-            chrome_bin = (
-                "/Users/shang/my_work/ig_profile_scraper/"
-                "chrome-mac-arm64/"
-                "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
-            )
-            chromedriver_bin = "/opt/homebrew/bin/chromedriver"
-            profile_dir = "/Users/shang/.ig_chrome_profile"
+            profile_dir = os.getenv("IGSCRAPER_CHROME_PROFILE", "/tmp/chrome-profile")
             platform = "Linux x86_64"  # intentionally Linux-like
 
             options.add_argument("--remote-debugging-pipe")
+
+        chrome_bin, chromedriver_bin = self._resolve_browser_binaries()
+
+        # --------------------------------------------------
+        # Append worker_id and random suffix to profile path
+        # --------------------------------------------------
+        if profile_dir:
+            # Generate random 3-character alphanumeric string
+            random_suffix = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz0123456789', k=3))
+            
+            # Append worker_id and random suffix if thor_worker_id is available
+            if self.thor_worker_id:
+                profile_dir = f"{profile_dir}-{self.thor_worker_id}-{random_suffix}"
+            else:
+                # Fallback: just append random suffix if worker_id not available
+                profile_dir = f"{profile_dir}-{random_suffix}"
+                logger.warning("thor_worker_id not set, using profile path without worker_id suffix")
+
+        # --------------------------------------------------
+        # Ensure profile directory exists (Chrome requires it)
+        # --------------------------------------------------
+        if profile_dir:
+            os.makedirs(profile_dir, exist_ok=True)
 
         # --------------------------------------------------
         # Assert version lock
@@ -580,12 +661,131 @@ class SeleniumBackend(Backend):
 
 
     def stop(self):
-        """Quits the WebDriver and closes all associated browser windows."""
+        """
+        Quits the WebDriver and closes all associated browser windows.
+        
+        Also finalizes screenshots by generating a video, uploading to GCS, and cleaning up local files.
+        This hook is called during scraper shutdown, after scraping completes and before process exit.
+        """
+        # Stop screenshot worker first
         self.screenshot_stop_event.set()
         if hasattr(self, "screenshot_thread"):
             self.screenshot_thread.join(timeout=2)
+        
+        # Close browser first (after scraping completes)
         if self.driver:
             self.driver.quit()
+        
+        # Finalize screenshots (generate video, upload, cleanup)
+        # This runs after browser shutdown but before process exit
+        # Errors are logged but don't block shutdown
+        if self.config.main.enable_screenshots:
+            self._finalize_screenshots()
+
+    def _finalize_screenshots(self):
+        """
+        Shutdown-time artifact finalization: generate video from screenshots, upload to GCS, cleanup local files.
+        
+        This method:
+        1. Generates an MP4 video from all .webp screenshots in shot_dir
+        2. Uploads the video to the configured GCS bucket
+        3. Deletes all local screenshots and the video file
+        
+        Works for both PROFILE (mode 1) and POST (mode 2) jobs.
+        Failures are logged but don't block shutdown.
+        """
+        try:
+            # Resolve screenshot directory
+            shot_dir = Path(self.config.data.shot_dir).expanduser().resolve()
+            
+            if not shot_dir.exists():
+                logger.info(f"[finalize_screenshots] Screenshot directory does not exist: {shot_dir}. Nothing to finalize.")
+                return
+
+            # Count screenshots
+            webp_files = list(shot_dir.glob("*.webp"))
+            screenshot_count = len(webp_files)
+            logger.info(f"[finalize_screenshots] Found {screenshot_count} screenshots in {shot_dir}")
+
+            if screenshot_count < 2:
+                logger.warning(
+                    f"[finalize_screenshots] Only {screenshot_count} screenshot(s) found, need at least 2. "
+                    "Skipping video generation and cleanup."
+                )
+                return
+
+            # Generate video filename
+            video_name = generate_video_name(
+                mode=self.config.main.mode,
+                consumer_id=self.config.main.consumer_id,
+                profile_name=self.config.main.target_profile if self.config.main.mode == 1 else None,
+                run_name=self.config.main.run_name_for_url_file if self.config.main.mode == 2 else None,
+                worker_id=self.thor_worker_id,
+            )
+
+            if not video_name:
+                logger.error("[finalize_screenshots] Failed to generate video name. Skipping video generation.")
+                return
+
+            # Generate video in the screenshot directory (in-place)
+            video_path = shot_dir / video_name
+            logger.info(f"[finalize_screenshots] Generating video: {video_path}")
+
+            success = generate_video_from_screenshots(
+                screenshot_dir=shot_dir,
+                output_path=video_path,
+                fps=2.5,
+                target_height=640,
+            )
+
+            if not success:
+                logger.error("[finalize_screenshots] Video generation failed. Skipping upload and cleanup.")
+                return
+
+            logger.info(f"[finalize_screenshots] Video created successfully: {video_path}")
+
+            bucket_name = self.config.main.gcs_bucket_name
+            gcs_uri = None
+            push_gcs = self.config.main.push_to_gcs
+
+            if push_gcs == 0:
+                logger.info(
+                    "[finalize_screenshots] push_to_gcs=0: keeping video local (no GCS upload): %s",
+                    video_path.resolve(),
+                )
+            else:
+                # Upload to GCS
+                if not bucket_name:
+                    logger.error("[finalize_screenshots] gcs_bucket_name is not configured. Skipping upload.")
+                else:
+                    logger.info(f"[finalize_screenshots] Uploading to GCS bucket: {bucket_name!r}")
+                    gcs_object_name = f"vid_log/{video_name}"
+                    gcs_uri = upload_video_to_gcs(
+                        local_video_path=video_path,
+                        bucket_name=bucket_name,
+                        gcs_object_name=gcs_object_name,
+                    )
+
+                if gcs_uri:
+                    logger.info(f"[finalize_screenshots] Video uploaded to GCS: {gcs_uri}")
+                else:
+                    logger.error("[finalize_screenshots] GCS upload failed, but continuing with cleanup")
+
+            if push_gcs == 0:
+                logger.info("[finalize_screenshots] push_to_gcs=0: skipping local cleanup (screenshots + video kept).")
+            else:
+                # Cleanup: delete all screenshots and video file
+                # This runs even if upload failed (best-effort cleanup)
+                cleanup_local_files(
+                    screenshot_dir=shot_dir,
+                    video_path=video_path,
+                )
+
+            logger.info("[finalize_screenshots] Screenshot finalization completed")
+
+        except Exception as e:
+            # Fail-safe: log error but don't block shutdown
+            logger.error(f"[finalize_screenshots] Unexpected error during finalization: {e}", exc_info=True)
 
     def start_screenshot_worker(self):
         if not self.config.main.enable_screenshots:
@@ -605,7 +805,7 @@ class SeleniumBackend(Backend):
         )
         self.screenshot_thread.start()
 
-        logger.info("Screenshot worker started (7s interval)")
+        logger.debug("Screenshot worker started (7s interval)")
 
 
     def open_profile(self, profile_handle: str) -> None:
@@ -630,7 +830,7 @@ class SeleniumBackend(Backend):
         if os.path.exists(file_path):
             with open(file_path, "r", encoding="utf-8") as f:
                 urls = json.load(f)
-            logger.info(f"Loaded {len(urls)} post URLs from {file_path}.")
+            logger.debug(f"Loaded {len(urls)} post URLs from {file_path}.")
             return urls
         return None
 
@@ -646,7 +846,7 @@ class SeleniumBackend(Backend):
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(urls, f, ensure_ascii=False, indent=2)
-        logger.info(f"Saved {len(urls)} post URLs to {file_path}.")
+        logger.debug(f"Saved {len(urls)} post URLs to {file_path}.")
 
     def _load_processed_urls(self, file_path: str) -> set[str]:
         """
@@ -671,7 +871,7 @@ class SeleniumBackend(Backend):
                             processed.add(record["post_url"])
                     except json.JSONDecodeError:
                         continue
-            logger.info(f"Loaded {len(processed)} processed post URLs from {file_path}.")
+            logger.debug(f"Loaded {len(processed)} processed post URLs from {file_path}.")
         return processed
 
     def get_post_elements(self, limit: int) -> Iterator[Any]:
@@ -700,7 +900,7 @@ class SeleniumBackend(Backend):
             urls = [elem for elem in elements]
             self._save_urls(profile, urls, posts_path)
             if is_data_saved:
-                logger.info("Posts data was saved during collection. Trying to push to gs bucket")
+                logger.debug("Posts data was saved during collection. Trying to push to gs bucket")
                 self.on_posts_batch_ready(self.config.data.profile_path)
         else:
             urls = cached
@@ -710,7 +910,7 @@ class SeleniumBackend(Backend):
         processed = self._load_processed_urls(processed_data_path)
         urls = [u for u in urls if u not in processed]
 
-        logger.info(f"Returning {len(urls)} post URLs after filtering out {len(processed)} processed ones.")
+        logger.debug(f"Returning {len(urls)} post URLs after filtering out {len(processed)} processed ones.")
         return urls
 
 
@@ -752,19 +952,54 @@ class SeleniumBackend(Backend):
             - (None, error_dict) on failure.
             - (None, None) if no browser windows are left.
         """
+        # Timing: Start total time (just before opening the post tab)
+        total_time_start = time.perf_counter()
+        active_time_start = time.perf_counter()
+        active_time_accumulated = 0.0
+        error_type = None
+        status = "success"
+        
+        # Extract content_id and creator_handle
+        post_shortcode = extract_instagram_shortcode(post_url)
+        content_id = post_shortcode if post_shortcode else post_url
+        
+        # Get creator_handle: prefer target_profile, fallback to extracting from URL
+        creator_handle = getattr(self.config.main, 'target_profile', None)
+        if not creator_handle:
+            # Try to extract from URL (format: /username/p/... or /username/reel/...)
+            try:
+                parsed = urlparse(post_url)
+                parts = [p for p in parsed.path.strip("/").split("/") if p]
+                if len(parts) > 0 and parts[0] not in ["p", "reel"]:
+                    creator_handle = parts[0]
+                else:
+                    creator_handle = getattr(self.config.main, 'run_name_for_url_file', 'unknown')
+            except Exception:
+                creator_handle = getattr(self.config.main, 'run_name_for_url_file', 'unknown')
+        
         try:
             # switch to the new tab
             self.driver.switch_to.window(tab_handle)
             # unmute_if_muted(self.driver, 0.2)
 
             # del self.driver.requests  # Clear any previous requests to avoid memory bloat
-            logger.info(f"Switched to tab {tab_handle} for post {post_index} ({post_url}). Refreshing page.")
+            logger.debug(f"Switched to tab {tab_handle} for post {post_index} ({post_url}). Refreshing page.")
             # self.driver.refresh()
+            
+            # Active time: tab switch
+            active_time_end = time.perf_counter()
+            active_time_accumulated += (active_time_end - active_time_start)
+            
+            # Sleep (excluded from active time)
             random_delay(2.4, 4.0)  # Wait for at least 3 seconds for the page to load after refresh.
-            post_shortcode = extract_instagram_shortcode(post_url)
+            active_time_start = time.perf_counter()
             # Anti Bot measure
             if random.choice([0,0,1,1,1,1,1]) == 0:
                 human_mouse_move(self.driver,duration=self.config.main.human_mouse_move_duration)
+                # Active time: human_mouse_move
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
+                active_time_start = time.perf_counter()
 
             post_id = f"post_{post_index}"
             post_data = {
@@ -778,14 +1013,29 @@ class SeleniumBackend(Backend):
             # If using previously-captured requests to gather most media/metadata,
             # we only need to extract comments here. Skip other extraction blocks.
             if self.config.main.scrape_using_captured_requests:
-                logger.info(f"scrape_using_captured_requests=True — extracting comments only for {post_url}")
+                logger.debug(f"scrape_using_captured_requests=True — extracting comments only for {post_url}")
                 try:
                     post_data["post_comments_gif"] = self._extract_comments_from_captured_requests(self.driver, self.config) or []
-                    logger.info(f"Captured-requests comment extraction returned {len(post_data['post_comments_gif'])} items for {post_url}")
+                    logger.debug(f"Captured-requests comment extraction returned {len(post_data['post_comments_gif'])} items for {post_url}")
+                    # Active time: comment extraction
+                    active_time_end = time.perf_counter()
+                    active_time_accumulated += (active_time_end - active_time_start)
                 except Exception as e:
                     logger.error(f"Captured-requests comment extraction failed for {post_url}: {e}")
                     logger.debug(traceback.format_exc())
+                    # Active time: failed extraction attempt
+                    active_time_end = time.perf_counter()
+                    active_time_accumulated += (active_time_end - active_time_start)
 
+                # Emit timing logs before returning
+                total_time_end = time.perf_counter()
+                total_time_ms = int((total_time_end - total_time_start) * 1000)
+                active_time_ms = int(active_time_accumulated * 1000)
+                if active_time_ms > total_time_ms:
+                    active_time_ms = total_time_ms
+                self._emit_timing_log("pipeline_total_time", "creator_content", creator_handle, content_id, total_time_ms, status, error_type)
+                self._emit_timing_log("pipeline_active_time", "creator_content", creator_handle, content_id, active_time_ms, status, error_type)
+                
                 return post_data, None
 
             # Title / metadata
@@ -797,9 +1047,17 @@ class SeleniumBackend(Backend):
                     handle_slug = get_first_link_href_base(self.driver)
                 logger.info(f"Extracting title data for {post_url} with handle {handle_slug}")
                 post_data["post_title"] = self.get_post_title_data(handle_slug) or ""
+                # Active time: title extraction
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
+                active_time_start = time.perf_counter()
             except Exception as e:
                 logger.error(f"Title extraction failed for {post_url}: {e}")
                 logger.debug(traceback.format_exc())
+                # Active time: failed extraction attempt
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
+                active_time_start = time.perf_counter()
 
             # Media: Extract media - videos/images
             try:
@@ -813,36 +1071,83 @@ class SeleniumBackend(Backend):
                 # pdb.set_trace()
                 if video_data_list:
                     post_data["video_download_tasks"] = []
-                    task = write_and_run_full_download_script_.delay(video_data_list, self.config.data.media_path,out_script_path="download_full_media.sh",
-                                    run_script=True, redact_cookies=True)
-                    logger.info(f"Dispatched {len(video_data_list)} video download tasks.")
-                    post_data["video_download_tasks"].append(task.id)
-
+                    dl_result = write_and_run_full_download_script(
+                        video_data_list,
+                        self.config.data.media_path,
+                        out_script_path="download_full_media.sh",
+                        run_script=True,
+                        redact_cookies=True,
+                    )
+                    logger.info(
+                        f"Ran full-media download script for {len(video_data_list)} video(s): "
+                        f"{dl_result.get('script_path')!r}"
+                    )
+                    post_data["video_download_tasks"].append(dl_result.get("script_path"))
+                # Active time: media extraction
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
+                active_time_start = time.perf_counter()
             except Exception as e:
                 logger.error(f"Images extraction failed for {post_url}: {e}")
                 logger.debug(traceback.format_exc())
+                # Active time: failed extraction attempt
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
+                active_time_start = time.perf_counter()
             # Likes / other sections
             try:
                 post_data["likes"] = get_section_with_highest_likes(self.driver) or {}
                 logger.info(f"Likes extraction successful for {post_url}")
+                # Active time: likes extraction
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
+                active_time_start = time.perf_counter()
             except Exception as e:
                 logger.error(f"Likes extraction failed for {post_url}: {e}")
                 logger.debug(traceback.format_exc())
+                # Active time: failed extraction attempt
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
+                active_time_start = time.perf_counter()
             
             # comments
             try:
                 post_data["post_comments_gif"] = scrape_comments_with_gif(self.driver,self.config) or []
+                # Active time: comments extraction
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
             except Exception as e:
                 logger.error(f"Comments extraction with gif failed for {post_url}: {e}")
                 logger.debug(traceback.format_exc())
+                # Active time: failed extraction attempt
+                active_time_end = time.perf_counter()
+                active_time_accumulated += (active_time_end - active_time_start)
 
             return post_data, None
 
         except Exception as e:
+            status = "error"
+            error_type = type(e).__name__
             logger.exception(f"Unexpected error while scraping post {post_index} ({post_url}): {e}")
             error_data = {"index": post_index, "reason": str(e), "profile": self.config.main.target_profile}
+            # Accumulate any remaining active time
+            active_time_end = time.perf_counter()
+            active_time_accumulated += (active_time_end - active_time_start)
             return None, error_data
         finally:
+            # Calculate final timings
+            total_time_end = time.perf_counter()
+            total_time_ms = int((total_time_end - total_time_start) * 1000)
+            active_time_ms = int(active_time_accumulated * 1000)
+            
+            # Ensure active_time <= total_time
+            if active_time_ms > total_time_ms:
+                active_time_ms = total_time_ms
+            
+            # Emit timing logs
+            self._emit_timing_log("pipeline_total_time", "creator_content", creator_handle, content_id, total_time_ms, status, error_type)
+            self._emit_timing_log("pipeline_active_time", "creator_content", creator_handle, content_id, active_time_ms, status, error_type)
+            
             self._close_tab_and_switch_back(tab_handle, main_window_handle, debug)
             # Check if any windows are left open after closing.
             if not self.driver.window_handles:
@@ -853,7 +1158,8 @@ class SeleniumBackend(Backend):
         batch_size=3,
         save_every=5,
         tab_open_retries=4,
-        debug=False
+        debug=False,
+        url_metadata=None
     ):
         """
         Scrapes a list of post URLs in batches, saving results periodically.
@@ -871,6 +1177,9 @@ class SeleniumBackend(Backend):
             tab_open_retries (int): The number of retries for detecting a new tab.
             debug (bool): If True, scraped tabs will not be closed, which is useful
                           for debugging.
+            url_metadata (dict, optional): Per-URL metadata overrides. Format:
+                          {url: {"max_comments": N}}. Allows per-post control
+                          of scraping parameters (e.g., max_comments override).
 
         Returns:
             A dictionary containing lists of 'scraped_posts' and 'skipped_posts'.
@@ -880,6 +1189,9 @@ class SeleniumBackend(Backend):
 
         main_handle = self.driver.current_window_handle
         tmp_file = self.config.data.tmp_path
+        
+        # Normalize url_metadata to empty dict if None (defensive)
+        url_metadata = url_metadata or {}
 
         # main loop over batches
         for batch_start in range(0, len(post_elements), batch_size):
@@ -909,7 +1221,7 @@ class SeleniumBackend(Backend):
                         # optionally give the new tab a moment to start loading
                         time.sleep(random.uniform(0.8, 1.5))
                         opened.append((i, href, new_handle))
-                        logger.info(f"Opened post {i+1} in new tab: {href} -> handle {new_handle}")
+                        logger.debug(f"Opened post {i+1} in new tab: {href} -> handle {new_handle}")
                     except Exception as e:
                         logger.error(f"Failed to open new tab for post {i+1}: {e}")
                         results["skipped_posts"].append({
@@ -928,7 +1240,49 @@ class SeleniumBackend(Backend):
             # --- scrape each opened tab, one-by-one, ensuring closure ---
             for post_index, post_url, tab_handle in opened:
                 time.sleep(random.uniform(3, 10))
-                post_data, error_data = self._scrape_and_close_tab(post_index, post_url, tab_handle, main_handle, debug)
+                
+                # SURGICAL OVERRIDE: Apply per-post max_comments if specified in url_metadata
+                # Store original value to ensure proper restoration (even if exception occurs)
+                original_max_comments = self.config.main.max_comments
+                override_applied = False
+                
+                try:
+                    # Extract shortcode from URL and check if it has metadata override
+                    # url_metadata is now keyed by shortcode, not URL
+                    post_shortcode = extract_instagram_shortcode(post_url)
+                    if url_metadata and post_shortcode and post_shortcode in url_metadata:
+                        metadata = url_metadata[post_shortcode]
+                        override_max_comments = metadata.get("max_comments")
+                        
+                        if override_max_comments is not None:
+                            # Validate override value (defensive check)
+                            if isinstance(override_max_comments, int) and override_max_comments > 0:
+                                logger.info(
+                                    f"[Per-post override] {post_url} (shortcode: {post_shortcode}): "
+                                    f"max_comments {original_max_comments} → {override_max_comments}"
+                                )
+                                self.config.main.max_comments = override_max_comments
+                                override_applied = True
+                            else:
+                                logger.warning(
+                                    f"[Per-post override] {post_url} (shortcode: {post_shortcode}): Invalid max_comments={override_max_comments}. "
+                                    f"Using default: {original_max_comments}"
+                                )
+                    elif url_metadata and post_shortcode:
+                        logger.debug(
+                            f"[Per-post override] No metadata found for shortcode: {post_shortcode} (URL: {post_url})"
+                        )
+                    
+                    # Scrape the post (existing code path)
+                    post_data, error_data = self._scrape_and_close_tab(post_index, post_url, tab_handle, main_handle, debug)
+                    
+                finally:
+                    # CRITICAL: Always restore original max_comments, even if exception occurs
+                    if override_applied:
+                        self.config.main.max_comments = original_max_comments
+                        logger.debug(
+                            f"[Per-post override] Restored max_comments to {original_max_comments}"
+                        )
 
                 if post_data is None and error_data is None:
                     # This indicates no browser windows are left.
@@ -965,6 +1319,34 @@ class SeleniumBackend(Backend):
             logger.info("Saved final scrape results.")
 
         return results
+
+    def _emit_timing_log(self, event: str, category: str, creator_handle: str | None, content_id: str | None, duration_ms: int, status: str, error_type: str | None):
+        """
+        Emit a structured timing log event.
+        
+        Args:
+            event: Either "pipeline_total_time" or "pipeline_active_time"
+            category: Either "creator_profile" or "creator_content"
+            creator_handle: Instagram profile handle
+            content_id: Post/Reel ID or URL slug, or None for profile
+            duration_ms: Duration in integer milliseconds
+            status: "success" or "error"
+            error_type: Exception class name or None
+        """
+        consumer_id = getattr(self.config.main, 'consumer_id', None)
+        log_entry = {
+            "event": event,
+            "category": category,
+            "creator_handle": creator_handle,
+            "content_id": content_id,
+            "pipeline": "Slug-Ig-Crawler",
+            "duration_ms": duration_ms,
+            "status": status,
+            "error_type": error_type,
+            "consumer_id": consumer_id,
+            "thor_worker_id": self.thor_worker_id
+        }
+        logger.info(json.dumps(log_entry, ensure_ascii=False))
 
     def _close_tab_and_switch_back(self, tab_handle_to_close: str, main_window_handle: str, debug: bool):
         """
@@ -1174,8 +1556,47 @@ class SeleniumBackend(Backend):
         """
         baseline_count = self.count_parsed_comments(config.data.post_entity_path)
 
-        container_info = find_comment_container(driver)
-        container = container_info.get("selector") if container_info else None
+        def get_valid_container(driver, max_retries=3):
+            """Get a valid container selector with retry logic."""
+            for attempt in range(max_retries):
+                container_info = find_comment_container(driver)
+                container = container_info.get("selector") if container_info else None
+                
+                if container:
+                    # Validate the selector exists
+                    try:
+                        driver.find_element(By.CSS_SELECTOR, container)
+                        logger.debug(f"Container selector validated successfully on attempt {attempt + 1}: {container}")
+                        return container
+                    except Exception as e:
+                        logger.debug(f"Container selector invalid on attempt {attempt + 1}: {e}")
+                        if attempt < max_retries - 1:
+                            time.sleep(1)  # Wait before retry
+                            continue
+                
+                # If no container found, try again
+                if attempt < max_retries - 1:
+                    logger.debug(f"No container found on attempt {attempt + 1}, retrying...")
+                    time.sleep(1)
+            
+            logger.warning("Could not find valid container after retries")
+            return None
+
+        # Solution 3: Wait for comments to be present before finding container
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.html-div"))
+            )
+            logger.debug("Comments container detected, proceeding with container discovery")
+        except Exception as e:
+            logger.warning(f"Comments not loaded within timeout, proceeding anyway: {e}")
+
+        # Solution 1: Get container with retry logic
+        container = get_valid_container(driver)
+        # Use fallback default selector if container discovery failed
+        if not container:
+            logger.warning("Container discovery failed, using fallback default selector")
+            container = "div.html-div"
         self.reply_expander = ReplyExpander.with_container(driver, container, max_clicks=5, is_headless=self.config.main.headless, base_pause_ms=600)
         total_clicked = 0
         MAX_CLICKS_ALLOWED = 10
@@ -1186,14 +1607,14 @@ class SeleniumBackend(Backend):
         # Initial extraction from embed script
         # this call doesnt get recorded into perf logs, as these first few comments are embedded in the HTML.
         initial_comments_data = extract_script_embedded_comments(self.driver)
-        logger.info(f"Initial embedded comments extraction returned {len(initial_comments_data.get('flattened_data', []))} items.")
+        logger.debug(f"Initial embedded comments extraction returned {len(initial_comments_data.get('flattened_data', []))} items.")
         is_saved = self.config.main.registry.save_parsed_results(initial_comments_data, config.data.post_entity_path)
         if is_saved:
             is_commentdata_saved = True
         # self.config.main.registry.get_posts_data(self.config, self.config.data.post_page_data_key, data_type="post")
         prev_comment_count = 0
         end_comment_attempts = 0
-        MAX_END_COMMENT_ATTEMPTS = 3
+        MAX_END_COMMENT_ATTEMPTS = config.main.comment_no_new_retries
         while True:
             batch_index += 1
             logger.debug(f"Starting batch {batch_index}: performing {batch_scrolls} scroll loops.")
@@ -1445,7 +1866,7 @@ class SeleniumBackend(Backend):
                 self._save_rate_limit_state()
                 logger.info("Loaded expired rate limit state — reset to defaults.")
             else:
-                logger.info("Loaded persisted rate limit state from disk.")
+                logger.debug("Loaded persisted rate limit state from disk.")
 
         except Exception as e:
             logger.warning(f"Failed to load rate limit state: {e}")
@@ -1531,7 +1952,7 @@ class SeleniumBackend(Backend):
         out_dir = Path(self.config.data.shot_dir).expanduser().resolve()
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"[screenshot] resolved out_dir = {out_dir}")
+        logger.debug(f"[screenshot] resolved out_dir = {out_dir}")
 
         while not self.screenshot_stop_event.is_set():
             try:
@@ -1551,7 +1972,7 @@ class SeleniumBackend(Backend):
                     method=2         # slowest = best compression
                 )
 
-                logger.info(f"[screenshot] saved path={path}")
+                logger.debug(f"[screenshot] saved path={path}")
 
             except Exception as e:
                 logger.debug(f"[screenshot] worker error: {e}")
@@ -1559,227 +1980,3 @@ class SeleniumBackend(Backend):
             self.screenshot_stop_event.wait(interval_sec)
 
 
-# self.driver.execute_script("""
-# const container = document.querySelector(arguments[0]);
-# if (!container) return "NO_CONTAINER";
-
-# container.dispatchEvent(new WheelEvent("wheel", {
-#   deltaY: 600,
-#   bubbles: true,
-#   cancelable: true
-# }));
-
-# container.scrollTop += 600;
-
-# return {
-#   scrollTop: container.scrollTop,
-#   scrollHeight: container.scrollHeight
-# };
-# """, container)
-
-
-# function igWheelScroll(container, delta = 600) {
-#   if (!container) return null;
-
-#   container.dispatchEvent(new WheelEvent("wheel", {
-#     deltaY: delta,
-#     bubbles: true,
-#     cancelable: true
-#   }));
-
-#   container.scrollTop += delta;
-
-#   return {
-#     scrollTop: container.scrollTop,
-#     scrollHeight: container.scrollHeight,
-#     ts: performance.now()
-#   };
-# }
-
-# const r = igWheelScroll(container, container.clientHeight * 0.6);
-# logs.push("🌀 wheel scroll → top=" + r.scrollTop);
-
-# await new Promise(r => requestAnimationFrame(r));
-
-
-# Good, this is the key confirmation: **the container *does* respond to real wheel events in Docker**. That tells us exactly what Instagram is listening for. Now we wire this in **without changing your logic**, just by adding one primitive and reusing it everywhere.
-
-# I’ll keep this clean and mechanical.
-
-# ---
-
-# ## The important insight (why Docker differed)
-
-# Instagram **does not react to `scrollTop` alone** in some environments.
-# It reacts to **wheel + scroll coupling**, processed over animation frames.
-
-# Your snippet works because it does **all three**:
-
-# 1. `WheelEvent("wheel", deltaY)`
-# 2. `scrollTop += …`
-# 3. Executes inside the page event loop
-
-# Your existing JS scrolls *look* correct, but:
-
-# * some paths use smooth scrolling
-# * some rely on height diff heuristics
-# * some exit early on idle
-
-# In Docker/headless, **no wheel → no GraphQL**.
-
-# ---
-
-# ## The primitive to reuse (do not change logic)
-
-# Create **one atomic scroll primitive** and call it from both modes.
-
-# ### JS primitive (inject once, reuse everywhere)
-
-# ```js
-# function igWheelScroll(container, delta = 600) {
-#   if (!container) return null;
-
-#   container.dispatchEvent(new WheelEvent("wheel", {
-#     deltaY: delta,
-#     bubbles: true,
-#     cancelable: true
-#   }));
-
-#   container.scrollTop += delta;
-
-#   return {
-#     scrollTop: container.scrollTop,
-#     scrollHeight: container.scrollHeight,
-#     ts: performance.now()
-#   };
-# }
-# ```
-
-# ---
-
-# ## 1️⃣ Integrate into **only_scroll** (minimal change)
-
-# Inside your JS loop, replace **any** `scrollBy` / `smoothScrollStep` call with:
-
-# ```js
-# const r = igWheelScroll(container, container.clientHeight * 0.6);
-# logs.push("🌀 wheel scroll → top=" + r.scrollTop);
-# ```
-
-# Then immediately yield a frame:
-
-# ```js
-# await new Promise(r => requestAnimationFrame(r));
-# ```
-
-# That’s it.
-# No logic change. No counters touched.
-
-# ---
-
-# ## 2️⃣ Integrate into **expand_replies** (search + settle)
-
-# Two places only.
-
-# ### A) When searching for buttons (instead of gentleSearchScroll internals)
-
-# Replace this block:
-
-# ```js
-# container.scrollBy(0, delta);
-# ```
-
-# with:
-
-# ```js
-# igWheelScroll(container, delta);
-# await new Promise(r => requestAnimationFrame(r));
-# ```
-
-# ### B) After clicking a reply
-
-# Right after:
-
-# ```js
-# el.click();
-# ```
-
-# add:
-
-# ```js
-# igWheelScroll(container, 200);
-# await new Promise(r => requestAnimationFrame(r));
-# ```
-
-# This forces IG to:
-
-# * reflow
-# * schedule network fetch
-# * hydrate new replies
-
-# ---
-
-# ## 3️⃣ Python-side: where to force a frame tick (important)
-
-# You already asked about this line — here is **exactly where it belongs**.
-
-# ### After every scroll batch (both modes)
-
-# ```python
-# self.driver.execute_script(
-#     "return new Promise(r => requestAnimationFrame(() => r()));"
-# )
-# ```
-
-# Place it:
-
-# * after `only_scroll(...)`
-# * after `expand_replies(...)`
-# * after any manual `execute_script` scroll
-
-# This prevents Docker from batching events and skipping IG’s observer.
-
-# ---
-
-# ## 4️⃣ Why this works (and why nothing else did)
-
-# Instagram comment loading is gated on:
-
-# * `wheel` event
-# * user gesture timing
-# * layout thrash across frames
-
-# Local Mac:
-
-# * compositor is fast
-# * smooth scroll works accidentally
-
-# Docker/headless:
-
-# * no compositor acceleration
-# * no wheel → no fetch
-# * smooth scroll ≠ user intent
-
-# You just gave IG exactly what it expects.
-
-# ---
-
-# ## 5️⃣ Final rule (burn this in)
-
-# > **If GraphQL didn’t fire, you didn’t scroll like a human.**
-
-# For IG that means:
-
-# * wheel
-# * scrollTop
-# * animation frame
-# * repeat
-
-# You now have the correct primitive.
-# If you want, next we can:
-
-# * wrap this into a single JS utility injected once
-# * log scroll → GraphQL correlation
-# * or port this exact behavior to Playwright (yes, it’s even cleaner there)
-
-# But as-is: **this will make Docker behave like your local machine.**

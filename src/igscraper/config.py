@@ -1,5 +1,5 @@
 import toml
-from pydantic import Field, ValidationError, BaseModel
+from pydantic import Field, ValidationError, BaseModel, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional, Callable, Any, List
 from igscraper.logger import configure_root_logger, get_logger
@@ -9,6 +9,22 @@ from pydantic import PrivateAttr
 from igscraper.models.registry_parser import GraphQLModelRegistry
 
 PROJECT_ROOT = Path.cwd()  # since you always start in root
+
+
+def get_default_cached_config_path() -> Path:
+    """
+    Default user config location when ``--config`` is omitted: ``~/.slug/config.toml``.
+
+    The file may not exist yet; callers should check before loading.
+    """
+    from igscraper.paths import get_cached_config_path
+
+    return get_cached_config_path()
+
+
+# Suppress noisy third-party library loggers (set before config loads)
+# These are library-specific settings, independent of config.toml [logging] section
+# They only affect external library noise, not application logging
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("selenium.webdriver.remote").setLevel(logging.INFO)
 
@@ -53,6 +69,10 @@ class MainConfig(BaseSettings):
     headless: bool = True
     enable_screenshots: bool = False
     use_docker: bool = False
+    # Optional paths when env vars are unset (see selenium_backend). Precedence is always:
+    # CHROME_BIN / CHROMEDRIVER_BIN env → (if local) these fields → local defaults; (if Docker) image paths.
+    chrome_binary_path: Optional[str] = None
+    chromedriver_binary_path: Optional[str] = None
     # Minimum random delay (in seconds) between batches of requests.
     rate_limit_seconds_min: int = 2
     # Maximum random delay (in seconds) between batches of requests.
@@ -80,7 +100,15 @@ class MainConfig(BaseSettings):
     fetch_comments: bool = True
 
     gcs_bucket_name: str = "crawled_data"
+    # 1 = upload JSONL to GCS and insert gs://... into Postgres; 0 = skip GCS, insert absolute local path.
+    push_to_gcs: int = Field(1, description="Must be 0 or 1.")
 
+    @field_validator("push_to_gcs")
+    @classmethod
+    def _push_to_gcs_binary(cls, v: int) -> int:
+        if v not in (0, 1):
+            raise ValueError("push_to_gcs must be 0 or 1")
+        return v
 
     # Credentials can be loaded from env vars (e.g., IGSCRAPER_USERNAME)
     # The alias allows the TOML file to use 'instagram_username'.
@@ -95,6 +123,10 @@ class MainConfig(BaseSettings):
 
     fetch_replies: bool = True
     max_comments: int = 20
+    # Maximum number of consecutive batches with no new comments before stopping comment extraction
+    comment_no_new_retries: int = 3
+    # Consumer ID for identifying the scraper instance in logs
+    consumer_id: Optional[str] = None
 
 class DataConfig(BaseSettings):
     """Configuration settings related to file paths and data storage."""
@@ -140,12 +172,9 @@ class LoggingConfig(BaseSettings):
     log_format: str
     date_format: str
 
-class CeleryConfig(BaseSettings):
-    """Configuration for Celery."""
-    broker_url: str
-    result_backend: str
-    log_format: Optional[str] = None
-    date_format: Optional[str] = None
+class TraceConfig(BaseSettings):
+    """Configuration for trace/tracking information."""
+    thor_worker_id: str  # Required, non-empty
 
 class Config(BaseSettings):
     """
@@ -158,7 +187,7 @@ class Config(BaseSettings):
     main: MainConfig
     data: DataConfig
     logging: LoggingConfig
-    celery: CeleryConfig
+    trace: TraceConfig
     _driver = PrivateAttr(default=None)
 
 def load_config(path: str) -> Config:
@@ -192,6 +221,12 @@ def load_config(path: str) -> Config:
 
     logger = get_logger("config")
     logger.debug("Configuration loaded successfully")
+    
+    # Note: [trace] validation is deferred to Pipeline.__init__ to avoid
+    # import-time failures for loaders that omit trace (e.g. some test helpers)
+    # If trace section is missing, add a dummy one to satisfy Pydantic schema
+    if "trace" not in data:
+        data["trace"] = {"thor_worker_id": "not-validated-yet"}
     
     # Return the config object without path expansion.
     # Path expansion will be handled per-profile in the pipeline.

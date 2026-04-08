@@ -29,3 +29,6 @@ htmlcov/
 # Optional: large runtime artifacts
 screenshots/
 outputs/
+src/igscraper/cookies/*
+data/
+chrome*
