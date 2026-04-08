@@ -93,10 +93,15 @@ def _cmd_bootstrap(args: argparse.Namespace) -> None:
     print(f"  Config path: {get_cached_config_path()}")
     print(f"  Force browser download: {bool(args.force)}")
     print(f"  Force config overwrite: {bool(args.force_config)}")
+    print(f"  Setup Postgres tables: {bool(args.setup_postgres)}")
+    if args.postgres_sql_file:
+        print(f"  Postgres SQL file override: {args.postgres_sql_file}")
 
     res = run_bootstrap(
         force_browser=args.force,
         force_config=args.force_config,
+        setup_postgres=args.setup_postgres,
+        postgres_sql_file=args.postgres_sql_file,
         progress=lambda msg: print(f"  - {msg}"),
     )
     if not res.ok:
@@ -110,6 +115,11 @@ def _cmd_bootstrap(args: argparse.Namespace) -> None:
         print(f"  ChromeDriver: {res.chromedriver_bin}")
     if res.config_path:
         print(f"  Sample config: {res.config_path}" + (" (written)" if res.config_written else " (already existed)"))
+    if res.postgres_setup_attempted:
+        status = "ok" if res.postgres_setup_ok else "failed"
+        print(f"  Postgres setup: {status}")
+        if res.postgres_message:
+            print(f"  Postgres details: {res.postgres_message}")
 
 
 def _cmd_show_config(_args: argparse.Namespace) -> None:
@@ -210,6 +220,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "--force-config",
         action="store_true",
         help="Overwrite ~/.slug/config.toml with the bundled sample.",
+    )
+    b.add_argument(
+        "--setup-postgres",
+        action="store_true",
+        help=(
+            "Run scripts/postgres_setup.sql against Postgres using PUGSY_PG_* env vars; "
+            "idempotent via CREATE TABLE/INDEX IF NOT EXISTS."
+        ),
+    )
+    b.add_argument(
+        "--postgres-sql-file",
+        default=None,
+        help="Optional path override for postgres setup SQL file.",
     )
 
     sub.add_parser(

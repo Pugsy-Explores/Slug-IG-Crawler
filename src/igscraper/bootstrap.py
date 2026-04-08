@@ -8,10 +8,12 @@ import shutil
 import stat
 import tempfile
 import zipfile
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 import requests
+import psycopg
 
 from igscraper.paths import (
     chrome_executable_path_after_extract,
@@ -39,6 +41,9 @@ class BootstrapResult:
     chromedriver_bin: Optional[Path] = None
     config_path: Optional[Path] = None
     config_written: bool = False
+    postgres_setup_attempted: bool = False
+    postgres_setup_ok: Optional[bool] = None
+    postgres_message: str = ""
 
 
 def read_bundled_sample_config_text() -> str:
@@ -129,10 +134,76 @@ def ensure_sample_config_in_cache(*, force: bool = False) -> tuple[Path, bool]:
     return dest, True
 
 
+def _default_postgres_setup_sql_path() -> Path:
+    # src/igscraper/bootstrap.py -> repo root/scripts/postgres_setup.sql
+    return Path(__file__).resolve().parents[2] / "scripts" / "postgres_setup.sql"
+
+
+def _run_postgres_setup(
+    *,
+    sql_path: Path,
+    progress: Optional[Callable[[str], None]] = None,
+) -> tuple[bool, str]:
+    def _emit(msg: str) -> None:
+        if progress:
+            progress(msg)
+
+    if not sql_path.is_file():
+        return False, f"Postgres setup SQL file not found: {sql_path}"
+
+    host = (os.environ.get("PUGSY_PG_HOST") or "localhost").strip()
+    port = int((os.environ.get("PUGSY_PG_PORT") or "5433").strip())
+    user = (os.environ.get("PUGSY_PG_USER") or "postgres").strip()
+    password = os.environ.get("PUGSY_PG_PASSWORD") or ""
+    database = (os.environ.get("PUGSY_PG_DATABASE") or "").strip()
+
+    if not database:
+        return (
+            False,
+            "PUGSY_PG_DATABASE is required for --setup-postgres (empty/missing).",
+        )
+
+    _emit(
+        "Postgres setup target -> "
+        f"host={host} port={port} db={database} user={user}"
+    )
+    _emit(f"Loading SQL from {sql_path}")
+    sql_text = sql_path.read_text(encoding="utf-8")
+    if not sql_text.strip():
+        return False, f"Postgres setup SQL is empty: {sql_path}"
+
+    dsn = (
+        f"host={host} port={port} dbname={database} "
+        f"user={user} password={password}"
+    )
+    try:
+        with psycopg.connect(dsn, connect_timeout=10) as conn:
+            with conn.cursor() as cur:
+                _emit("Executing postgres_setup.sql (idempotent statements)...")
+                cur.execute(sql_text)
+                conn.commit()
+                cur.execute(
+                    "SELECT to_regclass('public.crawled_posts'), "
+                    "to_regclass('public.crawled_comments')"
+                )
+                posts_tbl, comments_tbl = cur.fetchone()
+        if posts_tbl and comments_tbl:
+            return True, "Postgres bootstrap complete: required tables are present."
+        return (
+            False,
+            "Postgres setup ran but required tables were not detected "
+            "(crawled_posts, crawled_comments).",
+        )
+    except Exception as e:
+        return False, f"Postgres setup failed: {e}"
+
+
 def run_bootstrap(
     *,
     force_browser: bool = False,
     force_config: bool = False,
+    setup_postgres: bool = False,
+    postgres_sql_file: Optional[str] = None,
     progress: Optional[Callable[[str], None]] = None,
 ) -> BootstrapResult:
     """
@@ -173,6 +244,32 @@ def run_bootstrap(
         _emit(
             f"Sample config {'written' if cfg_written else 'already present'} at {cfg_path}"
         )
+        pg_ok: Optional[bool] = None
+        pg_msg = ""
+        if setup_postgres:
+            _emit("Running Postgres setup...")
+            pg_ok, pg_msg = _run_postgres_setup(
+                sql_path=Path(postgres_sql_file).expanduser().resolve()
+                if postgres_sql_file
+                else _default_postgres_setup_sql_path(),
+                progress=progress,
+            )
+            _emit(pg_msg)
+            if not pg_ok:
+                return BootstrapResult(
+                    ok=False,
+                    message=pg_msg,
+                    cft_platform=cft_platform,
+                    chrome_version="(cached)",
+                    chrome_bin=chrome_bin,
+                    chromedriver_bin=driver_bin,
+                    config_path=cfg_path,
+                    config_written=cfg_written,
+                    postgres_setup_attempted=True,
+                    postgres_setup_ok=False,
+                    postgres_message=pg_msg,
+                )
+
         return BootstrapResult(
             ok=True,
             message="Chrome and ChromeDriver already present in cache; skipped download.",
@@ -182,6 +279,9 @@ def run_bootstrap(
             chromedriver_bin=driver_bin,
             config_path=cfg_path,
             config_written=cfg_written,
+            postgres_setup_attempted=setup_postgres,
+            postgres_setup_ok=pg_ok,
+            postgres_message=pg_msg,
         )
 
     _emit("Fetching latest stable Chrome for Testing metadata...")
@@ -256,6 +356,32 @@ def run_bootstrap(
     _emit(f"Sample config {'written' if cfg_written else 'already present'} at {cfg_path}")
     _emit("Bootstrap finished successfully.")
 
+    pg_ok: Optional[bool] = None
+    pg_msg = ""
+    if setup_postgres:
+        _emit("Running Postgres setup...")
+        pg_ok, pg_msg = _run_postgres_setup(
+            sql_path=Path(postgres_sql_file).expanduser().resolve()
+            if postgres_sql_file
+            else _default_postgres_setup_sql_path(),
+            progress=progress,
+        )
+        _emit(pg_msg)
+        if not pg_ok:
+            return BootstrapResult(
+                ok=False,
+                message=pg_msg,
+                cft_platform=cft_platform,
+                chrome_version=version,
+                chrome_bin=chrome_bin,
+                chromedriver_bin=driver_bin,
+                config_path=cfg_path,
+                config_written=cfg_written,
+                postgres_setup_attempted=True,
+                postgres_setup_ok=False,
+                postgres_message=pg_msg,
+            )
+
     return BootstrapResult(
         ok=True,
         message="Bootstrap complete.",
@@ -265,4 +391,7 @@ def run_bootstrap(
         chromedriver_bin=driver_bin,
         config_path=cfg_path,
         config_written=cfg_written,
+        postgres_setup_attempted=setup_postgres,
+        postgres_setup_ok=pg_ok,
+        postgres_message=pg_msg,
     )

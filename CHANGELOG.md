@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.24] - 2026-04-08
+
+### Added
+- `bootstrap` support for optional Postgres schema setup via `--setup-postgres`.
+- `bootstrap` support for SQL path override via `--postgres-sql-file`.
+
+### Changed
+- Bootstrap logging is more detailed and step-oriented, including browser cache/config details and Postgres setup status.
+- Postgres setup executes the existing `scripts/postgres_setup.sql` script and verifies required tables, remaining idempotent via `IF NOT EXISTS`.
+
 ## [2.2.23] - 2026-04-08
 
 ### Changed
