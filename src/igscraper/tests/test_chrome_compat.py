@@ -37,7 +37,7 @@ def test_apply_automation_compat_flags_visible():
     o = Options()
     apply_automation_compat_flags(o, headless=False)
     args = o.arguments
-    assert "--start-maximized" in args
+    assert "--window-size=1920,1080" in args
 
 
 def test_macos_path_constant():

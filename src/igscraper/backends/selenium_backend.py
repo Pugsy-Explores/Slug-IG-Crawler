@@ -171,19 +171,26 @@ class SeleniumBackend(Backend):
 
     def _resolve_browser_binaries(self) -> tuple[str, str]:
         """
-        Resolve browser binaries from environment only.
+        Resolve browser binaries from environment, then ``~/.slug/browser`` cache.
 
-        ``~/.slug/.env`` is loaded first so bootstrap-provisioned values are available
-        to both docker and non-docker runs.
+        ``~/.slug/.env`` is loaded first so bootstrap-provisioned values are available.
+        If either binary is still missing, fills from cached Chrome for Testing layout
+        when both cached files exist (see :func:`igscraper.paths.get_cached_browser_binaries`).
         """
         load_dotenv_for_app()
         chrome = (os.environ.get("CHROME_BIN") or "").strip()
         driver = (os.environ.get("CHROMEDRIVER_BIN") or "").strip()
         if not chrome or not driver:
+            c_cached, d_cached = get_cached_browser_binaries()
+            if c_cached and not chrome:
+                chrome = str(c_cached.resolve())
+            if d_cached and not driver:
+                driver = str(d_cached.resolve())
+        if not chrome or not driver:
             raise RuntimeError(
                 "Missing CHROME_BIN and/or CHROMEDRIVER_BIN in environment.\n"
-                "Expected these to be sourced from ~/.slug/.env (written by bootstrap).\n"
-                "Run `Slug-Ig-Crawler bootstrap` and ensure ~/.slug/.env is present.\n"
+                "Expected these to be sourced from ~/.slug/.env (written by bootstrap), "
+                "or run `Slug-Ig-Crawler bootstrap` to cache browsers under ~/.slug/browser.\n"
                 f"(missing: chrome={not bool(chrome)}, chromedriver={not bool(driver)})"
             )
 
