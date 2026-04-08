@@ -1399,9 +1399,3 @@ grep "pipeline_total_time.*creator_profile" scraper_log_*.log | jq '.duration_ms
 grep "pipeline_.*_time.*creator_content" scraper_log_*.log | jq '{event, duration_ms}' | jq -s 'group_by(.event)'
 ```
 
----
-
-## Conclusion
-
-This documentation provides a comprehensive overview of the Slug-Ig-Crawler architecture, components, and execution flow. The modular design supports maintainability and observability. Remember that this is an **open-source** project shared for **research and education**; any deployment must remain **consistent with Instagram / Meta policies**, applicable law, and the [acceptable use](#open-source-research-use-and-acceptable-use) section.
-
