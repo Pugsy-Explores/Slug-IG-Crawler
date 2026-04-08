@@ -9,12 +9,12 @@ import argparse
 import sys
 from pathlib import Path
 
-# Add the project's 'src' directory to the Python path.
-# This ensures that modules can be imported using their full path from 'src'
-# (e.g., 'igscraper.utils') regardless of how the script is run.
-src_path = Path(__file__).resolve().parent.parent
-if str(src_path) not in sys.path:
-    sys.path.insert(0, str(src_path))
+# When running from a source checkout (`src/igscraper/...`), add `src/` so imports work.
+# When installed as a wheel, site-packages already provides `igscraper`.
+_pkg_dir = Path(__file__).resolve().parent
+_src = _pkg_dir.parent
+if _src.name == "src" and str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
 
 from igscraper.pipeline import Pipeline
 

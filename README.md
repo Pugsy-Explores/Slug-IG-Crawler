@@ -16,40 +16,41 @@ This document is organized so you can **understand the repo, skim flags, and run
 | 2 | [Objectives & scope](#objectives--scope) |
 | 3 | [Features](#features) |
 | 4 | [Key configuration flags](#key-configuration-flags) |
-| 5 | [Quickstart (5-10 minutes)](#quickstart-5-10-minutes) |
-| 6 | [Documentation map](#documentation-map) |
-| 7 | [Open source, research use, and acceptable use](#open-source-research-use-and-acceptable-use) |
+| 5 | [Installation](#installation) |
+| 6 | [Quickstart (5-10 minutes)](#quickstart-5-10-minutes) |
+| 7 | [Documentation map](#documentation-map) |
+| 8 | [Open source, research use, and acceptable use](#open-source-research-use-and-acceptable-use) |
 
 ### Reference (deep dive)
 
 | # | Section |
 |---|--------|
-| 8 | [Architecture Overview](#architecture-overview) |
-| 9 | [Entry Point: CLI](#entry-point-cli) |
-| 10 | [VS Code debugging (`launch.json`)](#vs-code-debugging-launchjson) |
-| 11 | [Core Components](#core-components) |
-| 12 | [End-to-End Workflow](#end-to-end-workflow) |
-| 13 | [Execution Flow](#execution-flow) |
-| 14 | [Sequence Diagram](#sequence-diagram) |
-| 15 | [Configuration](#configuration) |
-| 16 | [External services and infrastructure](#external-services-and-infrastructure) |
-| 17 | [Data Models and Parsing](#data-models-and-parsing) |
-| 18 | [Authentication](#authentication) |
-| 19 | [Docker and Docker Compose](#docker-and-docker-compose) |
-| 20 | [Data Persistence](#data-persistence) |
-| 21 | [Key Design Patterns](#key-design-patterns) |
-| 22 | [Dependencies](#dependencies) |
-| 23 | [Security Considerations](#security-considerations) |
-| 24 | [Troubleshooting](#troubleshooting) |
-| 25 | [Performance Timing & Observability](#performance-timing--observability) |
-| 26 | [Conclusion](#conclusion) |
+| 9 | [Architecture Overview](#architecture-overview) |
+| 10 | [Entry Point: CLI](#entry-point-cli) |
+| 11 | [VS Code debugging (`launch.json`)](#vs-code-debugging-launchjson) |
+| 12 | [Core Components](#core-components) |
+| 13 | [End-to-End Workflow](#end-to-end-workflow) |
+| 14 | [Execution Flow](#execution-flow) |
+| 15 | [Sequence Diagram](#sequence-diagram) |
+| 16 | [Configuration](#configuration) |
+| 17 | [External services and infrastructure](#external-services-and-infrastructure) |
+| 18 | [Data Models and Parsing](#data-models-and-parsing) |
+| 19 | [Authentication](#authentication) |
+| 20 | [Docker and Docker Compose](#docker-and-docker-compose) |
+| 21 | [Data Persistence](#data-persistence) |
+| 22 | [Key Design Patterns](#key-design-patterns) |
+| 23 | [Dependencies](#dependencies) |
+| 24 | [Security Considerations](#security-considerations) |
+| 25 | [Troubleshooting](#troubleshooting) |
+| 26 | [Performance Timing & Observability](#performance-timing--observability) |
+| 27 | [Conclusion](#conclusion) |
 
 ---
 
 ## What this repository is
 
 - **Stack:** Python 3, **Selenium** (+ **selenium-wire** for captured network traffic), **Pydantic** config, optional **GCS** and **Postgres** (`psycopg`) for artifact handoff.
-- **Entry point:** `python -m igscraper.cli --config /path/to/config.toml` → `Pipeline` → `SeleniumBackend` → page objects and utilities.
+- **Entry point:** `igscraper --config /path/to/config.toml` (or `python -m igscraper --config …`) → `Pipeline` → `SeleniumBackend` → page objects and utilities.
 - **Outputs:** JSONL and related files under configurable paths; when `push_to_gcs = 1`, batches can be uploaded and **enqueued** (`crawled_posts` / `crawled_comments`). See `scripts/postgres_setup.sql` for the DB schema.
 - **Operations note:** Job orchestrators (e.g. **Thor**) may generate configs from their own templates and run the same CLI inside Docker; this README does not replace Thor’s own docs.
 
@@ -99,6 +100,21 @@ These are the knobs people usually need first. Full TOML lives in **`config.exam
 
 ---
 
+## Installation
+
+PyPI distribution name: **`slug-ig-crawler`** (Python import package: **`igscraper`**).
+
+| Install | Command |
+|--------|---------|
+| Latest release from PyPI | `pip install slug-ig-crawler` |
+| With screenshot → MP4 helpers (`imageio`) | `pip install "slug-ig-crawler[video]"` |
+| Optional JSON5 parsing in the sorter | `pip install "slug-ig-crawler[json5]"` |
+| Editable from this repo (dev + tests + extras) | `pip install -e ".[dev,video,json5]"` (same as `requirements.txt`) |
+
+After install, the **`igscraper`** console script is on your `PATH`. Dependencies are declared in **`pyproject.toml`** (the old fully pinned `requirements.txt` is replaced by that file plus the editable install line above).
+
+---
+
 ## Quickstart (5-10 minutes)
 
 **Goal:** install dependencies, apply the Postgres schema, drop in a minimal `config.toml`, and run the CLI once.
@@ -106,12 +122,12 @@ These are the knobs people usually need first. Full TOML lives in **`config.exam
 | Step | Action |
 |------|--------|
 | 1 | `cd` to repo root. `python3 -m venv .venv && source .venv/bin/activate` (Windows: `.venv\Scripts\activate`). |
-| 2 | `pip install -r requirements.txt`. Run the CLI as `python -m igscraper.cli` from the repo root (the CLI adds `src/` to `sys.path`). |
+| 2 | `pip install -r requirements.txt` (editable install with dev/video/json5 extras). Run the CLI as `igscraper` or `python -m igscraper` from the repo root. |
 | 3 | **Postgres (required if you use enqueue):** `psql "$YOUR_DATABASE_URL" -f scripts/postgres_setup.sql`. Set `PUGSY_PG_HOST`, `PUGSY_PG_PORT`, `PUGSY_PG_USER`, `PUGSY_PG_PASSWORD`, `PUGSY_PG_DATABASE` in `.env` or your shell. |
 | 4 | `cp config.example.toml config.toml`. Set **`[data].cookie_file`**, **`[trace].thor_worker_id`** (any non-empty string, e.g. `local-dev`). Set **`push_to_gcs`** to `0` for a local-only trial without GCP. |
 | 5 | **Profile mode:** keep `[main].target_profiles` populated and ensure **`[data].urls_filepath`** is missing or points to a file that does **not** exist. **URL mode:** one URL per line in a file; set **`[data].urls_filepath`** to that real path. |
 | 6 | **Docker vs local:** `[main].use_docker = true` for Docker/Compose flows; `false` with `headless = false` for a visible local browser. See [Docker and Docker Compose](#docker-and-docker-compose). |
-| 7 | Run: `python -m igscraper.cli --config config.toml`. |
+| 7 | Run: `igscraper --config config.toml` (or `python -m igscraper --config config.toml`). |
 
 **Debug in the IDE:** [VS Code debugging (`launch.json`)](#vs-code-debugging-launchjson). For **debugpy**, start **igscraper: CLI (listen for debugger)**, then **igscraper: Attach to debugpy** so execution continues past `debugpy.wait_for_client()`.
 
@@ -199,7 +215,7 @@ At `Pipeline.run()`, the effective mode is chosen **after** config load (the `[m
 ### Config template and Thor
 
 - **This repo:** use `config.example.toml` as a starting point (copy to `config.toml` and edit). It includes a `[trace]` section required by `Pipeline`.
-- **Thor** does not read this README; it generates job configs from its own template (e.g. `thor/assets/base_config.toml`) and invokes Docker with `DOCKER_COMPOSE_FILE` pointing at **its** compose file. The **service name** `igscraper` and the usual entrypoint `python -m igscraper.cli --config /job/config.toml` should stay compatible with that flow.
+- **Thor** does not read this README; it generates job configs from its own template (e.g. `thor/assets/base_config.toml`) and invokes Docker with `DOCKER_COMPOSE_FILE` pointing at **its** compose file. The **service name** `igscraper` and the usual entrypoint `igscraper --config /job/config.toml` or `python -m igscraper --config /job/config.toml` should stay compatible with that flow.
 
 ---
 
@@ -218,7 +234,8 @@ The `cli.py` module serves as the **single entry point** for the application. It
 
 **Usage:**
 ```bash
-python -m igscraper.cli --config config.toml
+igscraper --config config.toml
+# or: python -m igscraper --config config.toml
 ```
 
 **Arguments:**
@@ -230,7 +247,7 @@ This document also includes a **[VS Code debugging (`launch.json`)](#vs-code-deb
 
 ## VS Code debugging (`launch.json`)
 
-Use this when you open the **repository root** (the folder that contains `src/`) in VS Code or Cursor. Create **`.vscode/launch.json`** and paste the following. It sets `PYTHONPATH` to `src/` so `python -m igscraper.cli` resolves the same way as in a shell where you exported `PYTHONPATH`, runs from `${workspaceFolder}` so relative paths in `config.toml` work, and uses the **Python** extension’s **debugpy** adapter (`"type": "debugpy"`). If your tooling only recognizes the older launch type, change every `"type": "debugpy"` to `"type": "python"`.
+Use this when you open the **repository root** (the folder that contains `src/`) in VS Code or Cursor. Create **`.vscode/launch.json`** and paste the following. It sets `PYTHONPATH` to `src/` so `python -m igscraper` resolves the same way as in a shell where you exported `PYTHONPATH`, runs from `${workspaceFolder}` so relative paths in `config.toml` work, and uses the **Python** extension’s **debugpy** adapter (`"type": "debugpy"`). If your tooling only recognizes the older launch type, change every `"type": "debugpy"` to `"type": "python"`.
 
 Adjust the `--config` argument if your TOML file is not named `config.toml` or does not live in the repo root. Select your virtual environment in the IDE **before** starting the debugger so breakpoints bind to the right interpreter.
 
@@ -242,7 +259,7 @@ Adjust the `--config` argument if your TOML file is not named `config.toml` or d
       "name": "igscraper: CLI",
       "type": "debugpy",
       "request": "launch",
-      "module": "igscraper.cli",
+      "module": "igscraper",
       "cwd": "${workspaceFolder}",
       "args": ["--config", "config.toml"],
       "env": {
@@ -255,7 +272,7 @@ Adjust the `--config` argument if your TOML file is not named `config.toml` or d
       "name": "igscraper: CLI (listen for debugger)",
       "type": "debugpy",
       "request": "launch",
-      "module": "igscraper.cli",
+      "module": "igscraper",
       "cwd": "${workspaceFolder}",
       "args": ["--config", "config.toml"],
       "env": {

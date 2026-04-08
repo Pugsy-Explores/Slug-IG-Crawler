@@ -60,14 +60,15 @@ RUN CHROME_VERSION=$($CHROME_BIN --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[
     test "${CHROME_VERSION%%.*}" = "${DRIVER_VERSION%%.*}"
 
 # ------------------------------------------------------
-# App
+# App (dependencies from pyproject.toml)
 # ------------------------------------------------------
 WORKDIR /app
 
-COPY requirements.txt .
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
 RUN pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+    && pip install --no-cache-dir ".[video]"
 
 COPY . .
 
-CMD ["python", "-m", "igscraper.cli", "--config", "config.toml"]
+CMD ["igscraper", "--config", "config.toml"]
