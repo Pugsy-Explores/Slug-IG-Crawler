@@ -69,12 +69,6 @@ log_dir = "outputs/logs"
 log_format = "%(asctime)s [%(levelname)s/%(processName)s] %(name)s: %(message)s"
 date_format = "%Y-%m-%d %H:%M:%S"
 
-[celery]
-broker_url = "redis://localhost:6379/0"
-result_backend = "redis://localhost:6379/0"
-log_format = "%(asctime)s [%(levelname)s/%(processName)s] %(name)s: %(message)s"
-date_format = "%Y-%m-%d %H:%M:%S"
-
 # Required for Pipeline runs: non-empty string (orchestrators usually inject this).
 [trace]
 thor_worker_id = "local-dev-or-job-id"

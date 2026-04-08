@@ -52,7 +52,7 @@ class Pipeline:
         self.config = None
         
         # Validate [trace].thor_worker_id here (not at config load time)
-        # This allows celery_app to load config without trace section
+        # so load_config can accept configs before trace is injected (e.g. by orchestrators).
         if not hasattr(self.master_config.trace, 'thor_worker_id') or \
            not self.master_config.trace.thor_worker_id or \
            self.master_config.trace.thor_worker_id.strip() == '' or \

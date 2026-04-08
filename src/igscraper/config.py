@@ -152,13 +152,6 @@ class LoggingConfig(BaseSettings):
     log_format: str
     date_format: str
 
-class CeleryConfig(BaseSettings):
-    """Configuration for Celery."""
-    broker_url: str
-    result_backend: str
-    log_format: Optional[str] = None
-    date_format: Optional[str] = None
-
 class TraceConfig(BaseSettings):
     """Configuration for trace/tracking information."""
     thor_worker_id: str  # Required, non-empty
@@ -174,7 +167,6 @@ class Config(BaseSettings):
     main: MainConfig
     data: DataConfig
     logging: LoggingConfig
-    celery: CeleryConfig
     trace: TraceConfig
     _driver = PrivateAttr(default=None)
 
@@ -211,7 +203,7 @@ def load_config(path: str) -> Config:
     logger.debug("Configuration loaded successfully")
     
     # Note: [trace] validation is deferred to Pipeline.__init__ to avoid
-    # import-time failures when celery_app loads config (which doesn't need trace)
+    # import-time failures for loaders that omit trace (e.g. some test helpers)
     # If trace section is missing, add a dummy one to satisfy Pydantic schema
     if "trace" not in data:
         data["trace"] = {"thor_worker_id": "not-validated-yet"}

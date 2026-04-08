@@ -5,17 +5,18 @@
 1. [Open source, research use, and acceptable use](#open-source-research-use-and-acceptable-use)
 2. [Architecture Overview](#architecture-overview)
 3. [Entry Point: CLI](#entry-point-cli)
-4. [Core Components](#core-components)
-5. [End-to-End Workflow](#end-to-end-workflow)
-6. [Execution Flow](#execution-flow)
-7. [Sequence Diagram](#sequence-diagram)
-8. [Configuration](#configuration)
-9. [External services and infrastructure](#external-services-and-infrastructure)
-10. [Data Models and Parsing](#data-models-and-parsing)
-11. [Authentication](#authentication)
-12. [Docker and Docker Compose](#docker-and-docker-compose)
-13. [Data Persistence](#data-persistence)
-14. [Performance Timing & Observability](#performance-timing--observability)
+4. [VS Code debugging (`launch.json`)](#vs-code-debugging-launchjson)
+5. [Core Components](#core-components)
+6. [End-to-End Workflow](#end-to-end-workflow)
+7. [Execution Flow](#execution-flow)
+8. [Sequence Diagram](#sequence-diagram)
+9. [Configuration](#configuration)
+10. [External services and infrastructure](#external-services-and-infrastructure)
+11. [Data Models and Parsing](#data-models-and-parsing)
+12. [Authentication](#authentication)
+13. [Docker and Docker Compose](#docker-and-docker-compose)
+14. [Data Persistence](#data-persistence)
+15. [Performance Timing & Observability](#performance-timing--observability)
 
 ---
 
@@ -120,6 +121,69 @@ python -m igscraper.cli --config config.toml
 **Arguments:**
 - `--config` (required): Path to the TOML configuration file
 
+This document also includes a **[VS Code debugging (`launch.json`)](#vs-code-debugging-launchjson)** section below with a ready-to-paste debugger configuration for the same entry point.
+
+---
+
+## VS Code debugging (`launch.json`)
+
+Use this when you open the **repository root** (the folder that contains `src/`) in VS Code or Cursor. Create **`.vscode/launch.json`** and paste the following. It sets `PYTHONPATH` to `src/` so `python -m igscraper.cli` resolves the same way as in a shell where you exported `PYTHONPATH`, runs from `${workspaceFolder}` so relative paths in `config.toml` work, and uses the **Python** extension’s **debugpy** adapter (`"type": "debugpy"`).
+
+Adjust the `--config` argument if your TOML file is not named `config.toml` or does not live in the repo root. Select your virtual environment in the IDE **before** starting the debugger so breakpoints bind to the right interpreter.
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "igscraper: CLI",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "igscraper.cli",
+      "cwd": "${workspaceFolder}",
+      "args": ["--config", "config.toml"],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "igscraper: CLI (listen for debugger)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "igscraper.cli",
+      "cwd": "${workspaceFolder}",
+      "args": ["--config", "config.toml"],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "DEBUG_ATTACH": "1"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "igscraper: Attach to debugpy",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "localhost",
+        "port": 5678
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}",
+          "remoteRoot": "${workspaceFolder}"
+        }
+      ],
+      "justMyCode": false
+    }
+  ]
+}
+```
+
+**Optional attach flow:** `Pipeline` can call `debugpy.listen` when `DEBUG_ATTACH=1` (see `pipeline.py`). Start **igscraper: CLI (listen for debugger)** first, then start **igscraper: Attach to debugpy** so the process unblocks and you can hit breakpoints.
+
 ---
 
 ## Core Components
@@ -134,7 +198,7 @@ The configuration layer loads, validates, and processes settings from TOML files
   - `MainConfig`: Scraping behavior settings (mode, batch size, retries, etc.)
   - `DataConfig`: File paths and data storage settings
   - `LoggingConfig`: Logging configuration
-  - `CeleryConfig`: Celery task queue settings
+  - `TraceConfig`: `thor_worker_id` and related trace fields
 
 - **`ProfileTarget`**: Represents a single profile to scrape with `name` and `num_posts` fields
 
@@ -726,10 +790,6 @@ log_dir = "outputs/logs"
 log_format = "%(asctime)s [%(levelname)s/%(processName)s] %(name)s: %(message)s"
 date_format = "%Y-%m-%d %H:%M:%S"
 
-[celery]
-broker_url = "redis://localhost:6379/0"
-result_backend = "redis://localhost:6379/0"
-
 [trace]
 thor_worker_id = "your-worker-or-job-id"
 ```
@@ -749,13 +809,11 @@ Path strings support the following placeholders that are automatically expanded:
 
 ## External services and infrastructure
 
-This section lists **outbound** integrations (cloud, database, queues, HTTP) and what is **required by the config schema** vs **required only when a code path runs**.
+This section lists **outbound** integrations (cloud, database, HTTP) and what is **required by the config schema** vs **required only when a code path runs**.
 
-### Mandatory in every `config.toml` used with `load_config`
+### Required TOML sections
 
-| Item | Purpose |
-|------|--------|
-| **`[celery].broker_url` and `[celery].result_backend`** | Required fields in the Pydantic `Config` model. The main CLI pipeline does not start a Celery worker, but the values must be present in TOML. Separate **Celery workers** (`igscraper/mycelery/celery_app.py`) read `IGSCRAPER_CONFIG` (default `config.toml`) and use these URLs to connect to the broker and result backend. |
+`load_config` validates a **`Config`** with **`[main]`**, **`[data]`**, **`[logging]`**, and **`[trace]`** only. There is no message queue or broker section.
 
 ### Instagram and the browser (always for scraping)
 
@@ -789,14 +847,9 @@ This section lists **outbound** integrations (cloud, database, queues, HTTP) and
 
 Tables: **`crawled_posts`** and **`crawled_comments`** (see docstring in `enqueue_client.py` for expected columns, including **`thor_worker_id`**).
 
-### Redis / Celery (when a task is published)
+### Full-video download script (in-process)
 
-`write_and_run_full_download_script_.delay(...)` in `selenium_backend.py` submits work to the **broker** in `[celery].broker_url`. That requires:
-
-- A **reachable broker** (commonly Redis) at that URL when the video-download path runs.
-- A **running Celery worker** that imports `igscraper.mycelery.tasks`, if you expect the task to execute.
-
-If you never hit that branch (or only use captured-requests flows without dispatching that task), you may still need a valid `broker_url` in TOML for **config loading** only.
+When `scrape_using_captured_requests` is false and DOM media extraction yields videos, `services/full_media_download_script.py` **`write_and_run_full_download_script`** runs **in the same process** as the pipeline (writes a bash script under the media path and optionally executes it). No Redis, Celery, or separate worker is used.
 
 ### Other HTTP (`requests`)
 

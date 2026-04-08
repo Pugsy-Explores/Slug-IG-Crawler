@@ -8,7 +8,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch, Mock
+from unittest.mock import MagicMock, patch
 import toml
 
 # Adjust path to import from src
@@ -80,10 +80,6 @@ class TestTraceConfigValidation(unittest.TestCase):
                 "log_format": "%(message)s",
                 "date_format": "%Y-%m-%d"
             },
-            "celery": {
-                "broker_url": "redis://localhost:6379/0",
-                "result_backend": "redis://localhost:6379/0"
-            },
             "trace": {
                 "thor_worker_id": "worker-test-123"
             }
@@ -125,10 +121,6 @@ class TestTraceConfigValidation(unittest.TestCase):
                 "log_dir": "logs",
                 "log_format": "%(message)s",
                 "date_format": "%Y-%m-%d"
-            },
-            "celery": {
-                "broker_url": "redis://localhost:6379/0",
-                "result_backend": "redis://localhost:6379/0"
             }
         }
         self._create_config_file(config_data)
@@ -168,10 +160,6 @@ class TestTraceConfigValidation(unittest.TestCase):
                 "log_dir": "logs",
                 "log_format": "%(message)s",
                 "date_format": "%Y-%m-%d"
-            },
-            "celery": {
-                "broker_url": "redis://localhost:6379/0",
-                "result_backend": "redis://localhost:6379/0"
             },
             "trace": {}
         }
@@ -217,10 +205,6 @@ class TestTraceConfigValidation(unittest.TestCase):
                     "log_dir": "logs",
                     "log_format": "%(message)s",
                     "date_format": "%Y-%m-%d"
-                },
-                "celery": {
-                    "broker_url": "redis://localhost:6379/0",
-                    "result_backend": "redis://localhost:6379/0"
                 },
                 "trace": {
                     "thor_worker_id": empty_value
@@ -272,10 +256,6 @@ class TestPipelineInitialization(unittest.TestCase):
                 "log_format": "%(message)s",
                 "date_format": "%Y-%m-%d"
             },
-            "celery": {
-                "broker_url": "redis://localhost:6379/0",
-                "result_backend": "redis://localhost:6379/0"
-            },
             "trace": {
                 "thor_worker_id": "worker-pipeline-789"
             }
@@ -292,31 +272,14 @@ class TestPipelineInitialization(unittest.TestCase):
     
     @patch('igscraper.pipeline.SeleniumBackend')
     @patch('igscraper.pipeline.GraphQLModelRegistry')
-    @patch('igscraper.mycelery.celery_app.load_config')
-    def test_pipeline_stores_thor_worker_id(self, mock_load_config, mock_registry, mock_backend_class):
+    def test_pipeline_stores_thor_worker_id(self, mock_registry, mock_backend_class):
         """Test that Pipeline stores thor_worker_id from config."""
-        # Mock celery_app's config loading BEFORE importing pipeline to avoid import-time config requirement
-        from igscraper.config import Config, MainConfig, DataConfig, LoggingConfig, CeleryConfig, TraceConfig
-        mock_config = Config(
-            main=MainConfig(target_profiles=[]),
-            data=DataConfig(output_dir="", shot_dir="", posts_path="", metadata_path="", skipped_path="", tmp_path="", cookie_file="", media_path="", schema_path="", models_path="", extracted_data_path="", graphql_keys_path="", profile_page_data_key=[], post_page_data_key=[], post_entity_path="", profile_path=""),
-            logging=LoggingConfig(level="INFO", log_dir="", log_format="", date_format=""),
-            celery=CeleryConfig(broker_url="", result_backend=""),
-            trace=TraceConfig(thor_worker_id="worker-pipeline-789")
-        )
-        mock_load_config.return_value = mock_config
-        
-        # Import pipeline after mocking
-        import importlib
-        if 'igscraper.pipeline' in sys.modules:
-            importlib.reload(sys.modules['igscraper.pipeline'])
         from igscraper.pipeline import Pipeline
-        
-        # Mock backend
+
         mock_backend_instance = MagicMock()
         mock_backend_class.return_value = mock_backend_instance
         mock_registry.return_value = MagicMock()
-        
+
         pipeline = Pipeline(str(self.config_path))
         
         # Verify thor_worker_id is stored
@@ -447,10 +410,6 @@ class TestLoggingThorWorkerId(unittest.TestCase):
                 "log_format": "%(message)s",
                 "date_format": "%Y-%m-%d"
             },
-            "celery": {
-                "broker_url": "redis://localhost:6379/0",
-                "result_backend": "redis://localhost:6379/0"
-            },
             "trace": {
                 "thor_worker_id": "worker-log-999"
             }
@@ -468,30 +427,14 @@ class TestLoggingThorWorkerId(unittest.TestCase):
     @patch('igscraper.pipeline.SeleniumBackend')
     @patch('igscraper.pipeline.GraphQLModelRegistry')
     @patch('igscraper.pipeline.logger')
-    @patch('igscraper.mycelery.celery_app.load_config')
-    def test_timing_log_includes_thor_worker_id(self, mock_load_config, mock_logger, mock_registry, mock_backend_class):
+    def test_timing_log_includes_thor_worker_id(self, mock_logger, mock_registry, mock_backend_class):
         """Test that timing logs include thor_worker_id."""
-        # Mock celery_app's config loading BEFORE importing pipeline to avoid import-time config requirement
-        from igscraper.config import Config, MainConfig, DataConfig, LoggingConfig, CeleryConfig, TraceConfig
-        mock_config = Config(
-            main=MainConfig(target_profiles=[]),
-            data=DataConfig(output_dir="", shot_dir="", posts_path="", metadata_path="", skipped_path="", tmp_path="", cookie_file="", media_path="", schema_path="", models_path="", extracted_data_path="", graphql_keys_path="", profile_page_data_key=[], post_page_data_key=[], post_entity_path="", profile_path=""),
-            logging=LoggingConfig(level="INFO", log_dir="", log_format="", date_format=""),
-            celery=CeleryConfig(broker_url="", result_backend=""),
-            trace=TraceConfig(thor_worker_id="worker-log-999")
-        )
-        mock_load_config.return_value = mock_config
-        
-        # Import pipeline after mocking
-        import importlib
-        if 'igscraper.pipeline' in sys.modules:
-            importlib.reload(sys.modules['igscraper.pipeline'])
         from igscraper.pipeline import Pipeline
-        
+
         mock_backend_instance = MagicMock()
         mock_backend_class.return_value = mock_backend_instance
         mock_registry.return_value = MagicMock()
-        
+
         pipeline = Pipeline(str(self.config_path))
         
         # Call _emit_timing_log

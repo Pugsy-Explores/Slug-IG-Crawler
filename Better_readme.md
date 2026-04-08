@@ -43,7 +43,7 @@ Key expectations:
 
 * `config.toml` must point to a valid `cookie_file` generated via the login helper
   (e.g. `login_Save_cookie.py`).
-* `redis` is required if you are using Celery-based media downloads.
+* Optional full media download runs in-process (`write_and_run_full_download_script`); no Redis or Celery.
 * Output directory defaults to `outputs/`.
 
 ---

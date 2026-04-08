@@ -59,7 +59,6 @@ from igscraper.utils import (
     set_reel_volume,
     update_post_entity_path,
     write_and_run_curl_script,
-    write_and_run_full_download_script,
     get_shortcode_web_info,
     list_logged_urls,
     get_first_link_href_base,
@@ -72,7 +71,7 @@ from igscraper.utils.video_finalizer import (
     cleanup_local_files,
     generate_video_name,
 )
-from igscraper.mycelery.tasks import write_and_run_full_download_script_
+from igscraper.services.full_media_download_script import write_and_run_full_download_script
 from igscraper.services.enqueue_client import PostgresConfig, FileEnqueuer
 from igscraper.services.upload_enqueue import GcsUploadConfig, UploadAndEnqueue
 
@@ -1057,10 +1056,18 @@ class SeleniumBackend(Backend):
                 # pdb.set_trace()
                 if video_data_list:
                     post_data["video_download_tasks"] = []
-                    task = write_and_run_full_download_script_.delay(video_data_list, self.config.data.media_path,out_script_path="download_full_media.sh",
-                                    run_script=True, redact_cookies=True)
-                    logger.info(f"Dispatched {len(video_data_list)} video download tasks.")
-                    post_data["video_download_tasks"].append(task.id)
+                    dl_result = write_and_run_full_download_script(
+                        video_data_list,
+                        self.config.data.media_path,
+                        out_script_path="download_full_media.sh",
+                        run_script=True,
+                        redact_cookies=True,
+                    )
+                    logger.info(
+                        f"Ran full-media download script for {len(video_data_list)} video(s): "
+                        f"{dl_result.get('script_path')!r}"
+                    )
+                    post_data["video_download_tasks"].append(dl_result.get("script_path"))
                 # Active time: media extraction
                 active_time_end = time.perf_counter()
                 active_time_accumulated += (active_time_end - active_time_start)
