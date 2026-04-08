@@ -240,7 +240,7 @@ push_to_gcs = 0
   ```toml
   [main]
   target_profiles = [
-    { name = "jaat.aesthetics", num_posts = 5 },
+    { name = "jaat.aesthetics", num_posts = 1 },
   ]
   ```
 * Ensure `urls_filepath` is **not set** or points to a non-existent file

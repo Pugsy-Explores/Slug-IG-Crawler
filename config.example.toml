@@ -9,7 +9,7 @@ mode = 1
 # else if target_profiles is non-empty → mode 1.
 
 target_profiles = [
-  { name = "jaat.aesthetics", num_posts = 5 },
+  { name = "jaat.aesthetics", num_posts = 1 },
 ]
 
 run_name_for_url_file = "url_file_run"
@@ -36,7 +36,7 @@ comment_scroll_steps = 3
 scrape_using_captured_requests = true
 gcs_bucket_name = "your-gcs-bucket"
 # 1 = upload JSONL to GCS and insert gs://... into Postgres; 0 = skip GCS, insert absolute local path.
-push_to_gcs = 1
+push_to_gcs = 0
 consumer_id = "default_consumer"
 
 # When CHROME_BIN / CHROMEDRIVER_BIN are unset: local dev uses these, then built-in defaults; Docker uses image paths.

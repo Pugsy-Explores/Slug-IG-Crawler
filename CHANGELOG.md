@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.28b] - 2026-04-09
+
+### Changed
+- **Sample / bundled configs** (`sample_config.toml`, `assets/base_config.toml`, README quickstart): default example profile uses `num_posts = 1` and `push_to_gcs = 0` (local-first).
+
 ## [2.2.28a] - 2026-04-09
 
 ### Fixed

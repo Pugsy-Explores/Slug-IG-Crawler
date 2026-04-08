@@ -10,7 +10,7 @@ mode = 1
 # _beauty_fashion
 target_profiles = [
 
-  { name = "jaat.aesthetics", num_posts = 5 },
+  { name = "jaat.aesthetics", num_posts = 1 },
 
 ]
 
@@ -61,6 +61,8 @@ comments_scroll_retries = 1
 comment_scroll_steps = 3
 
 scrape_using_captured_requests = true
+
+push_to_gcs = 0
 
 gcs_bucket_name="pugsy_ai_crawled_data"
 

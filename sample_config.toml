@@ -8,7 +8,7 @@ mode = 1
 # mode 1: Scrape from profiles.
 # A list of Instagram profiles to scrape. Each has a 'name' and 'num_posts'.
 target_profiles = [
-    { name = "jaat.aesthetics", num_posts = 5 },
+    { name = "jaat.aesthetics", num_posts = 1 },
 ]
 # mode 2: Scrape from a list of URLs.
 run_name_for_url_file = "reel_support_test_24_1" # Used for output folder name in URL file mode
@@ -17,6 +17,7 @@ run_name_for_url_file = "reel_support_test_24_1" # Used for output folder name i
 # If true, the browser will run in the background without a visible window.
 # Recommended: true for performance, false for debugging.
 headless = false
+push_to_gcs = 0
 
 # The minimum and maximum random delay (in seconds) between batches of requests.
 # This helps avoid rate-limiting. Recommended: 2-5 seconds.
