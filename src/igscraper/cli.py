@@ -18,6 +18,15 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import toml
+import psycopg
+from dotenv import dotenv_values
+
+# macOS: set before importing packages that may start threads (reduces Chrome fork crashes
+# under embedded terminals / IDEs when launching Chrome for Testing).
+if sys.platform == "darwin":
+    os.environ.setdefault("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES")
+
 from difflib import get_close_matches
 from pathlib import Path
 
@@ -29,14 +38,27 @@ if _src.name == "src" and str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
 from igscraper.bootstrap import read_bundled_sample_config_text, run_bootstrap
+from igscraper.chrome_versions import try_version_line
 from igscraper import __version__
 from igscraper.login_Save_cookie import capture_login_cookies
 from igscraper.paths import (
     CACHED_CONFIG_FILENAME,
+    chrome_executable_path_after_extract,
+    chromedriver_executable_path_after_extract,
+    get_cached_browser_binaries,
     get_cached_config_path,
+    get_cached_dotenv_path,
+    get_chrome_extract_dir,
+    get_chromedriver_extract_dir,
     get_cookie_cache_dir,
     get_slug_cache_dir,
+    resolve_cft_platform,
     slug_cache_has_valid_browser_pair,
+)
+from igscraper.pg_env import (
+    DEFAULT_PG_DATABASE,
+    default_pg_user_when_unset,
+    load_dotenv_for_app,
 )
 
 
@@ -55,6 +77,66 @@ def _resolve_config_path(explicit: str | None) -> str:
         "  Pass --config PATH, or run: Slug-Ig-Crawler bootstrap\n"
         "  (installs sample config to ~/.slug/config.toml), then edit cookies and settings."
     )
+
+
+def _print_browser_binary_paths_first() -> None:
+    """Print Chrome + ChromeDriver paths and ``--version`` lines first."""
+    def _path_and_ver(label: str, path_str: str) -> None:
+        print(f"  {label}")
+        print(f"    {path_str}")
+        v = try_version_line(path_str)
+        if v:
+            print(f"    {v}")
+        else:
+            print("    (version: binary missing or `--version` failed)")
+
+    chrome_e = (os.environ.get("CHROME_BIN") or "").strip()
+    driver_e = (os.environ.get("CHROMEDRIVER_BIN") or "").strip()
+    print("Chrome / ChromeDriver:")
+    if chrome_e:
+        print("  CHROME_BIN")
+        print(f"    {chrome_e}")
+        v = try_version_line(chrome_e)
+        if v:
+            print(f"    {v}")
+        else:
+            print("    (version: not available)")
+    if driver_e:
+        print("  CHROMEDRIVER_BIN")
+        print(f"    {driver_e}")
+        v = try_version_line(driver_e)
+        if v:
+            print(f"    {v}")
+        else:
+            print("    (version: not available)")
+    if chrome_e or driver_e:
+        if bool(chrome_e) != bool(driver_e):
+            print(
+                "  (set both CHROME_BIN and CHROMEDRIVER_BIN, or unset both for ~/.slug/browser/)"
+            )
+        print()
+        return
+
+    c_cached, d_cached = get_cached_browser_binaries()
+    if c_cached and d_cached:
+        _path_and_ver("Chrome (cache)", str(c_cached))
+        _path_and_ver("ChromeDriver (cache)", str(d_cached))
+        print()
+        return
+
+    try:
+        plat = resolve_cft_platform()
+        c_root = get_chrome_extract_dir(plat)
+        d_root = get_chromedriver_extract_dir(plat)
+        c_exp = chrome_executable_path_after_extract(plat, c_root)
+        d_exp = chromedriver_executable_path_after_extract(plat, d_root)
+    except OSError:
+        print("  (could not resolve platform-specific paths)")
+        print()
+        return
+    _path_and_ver("Chrome (expected after bootstrap)", str(c_exp))
+    _path_and_ver("ChromeDriver (expected after bootstrap)", str(d_exp))
+    print()
 
 
 def _maybe_warn_browser_cache() -> None:
@@ -78,16 +160,77 @@ def _maybe_warn_browser_cache() -> None:
 
 
 def _cmd_run(args: argparse.Namespace) -> None:
-    # Import lazily so non-run commands (bootstrap/version/etc.) do not pull heavy deps.
-    from igscraper.pipeline import Pipeline
+    def _apply_cached_pg_env_defaults() -> None:
+        """
+        Apply PUGSY_* vars from ~/.slug/.env as authoritative runtime defaults.
+        """
+        cache_env = get_cached_dotenv_path()
+        if not cache_env.is_file():
+            return
+        vals = dotenv_values(str(cache_env))
+        for key in (
+            "PUGSY_PG_HOST",
+            "PUGSY_PG_PORT",
+            "PUGSY_PG_USER",
+            "PUGSY_PG_PASSWORD",
+            "PUGSY_PG_DATABASE",
+        ):
+            val = vals.get(key)
+            if val is not None:
+                os.environ[key] = str(val)
+
+    def _preflight_postgres_ready() -> None:
+        """
+        Lightweight startup check: DB reachable and required ingestion tables exist.
+        """
+        _apply_cached_pg_env_defaults()
+        load_dotenv_for_app()
+        host = (os.environ.get("PUGSY_PG_HOST") or "localhost").strip()
+        port = int((os.environ.get("PUGSY_PG_PORT") or "5432").strip())
+        raw_user = (os.environ.get("PUGSY_PG_USER") or "").strip()
+        user = raw_user if raw_user else default_pg_user_when_unset()
+        password = os.environ.get("PUGSY_PG_PASSWORD") or ""
+        database = (os.environ.get("PUGSY_PG_DATABASE") or "").strip() or DEFAULT_PG_DATABASE
+
+        dsn = (
+            f"host={host} port={port} dbname={database} "
+            f"user={user} password={password} connect_timeout=5"
+        )
+        try:
+            with psycopg.connect(dsn) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT to_regclass('public.crawled_posts'), "
+                        "to_regclass('public.crawled_comments')"
+                    )
+                    posts_tbl, comments_tbl = cur.fetchone()
+        except Exception as e:
+            raise SystemExit(
+                "Postgres preflight failed before pipeline start.\n"
+                f"  target: host={host} port={port} db={database} user={user}\n"
+                f"  error: {e}\n"
+                "  Hint: run `Slug-Ig-Crawler bootstrap --setup-postgres` "
+                "or fix ~/.slug/.env PUGSY_PG_* values."
+            ) from e
+
+        if not posts_tbl or not comments_tbl:
+            raise SystemExit(
+                "Postgres preflight failed: required tables missing.\n"
+                f"  crawled_posts={posts_tbl!r}, crawled_comments={comments_tbl!r}\n"
+                "  Run: `Slug-Ig-Crawler bootstrap --setup-postgres`."
+            )
 
     config_path = _resolve_config_path(args.config)
     _maybe_warn_browser_cache()
+    _preflight_postgres_ready()
+    # Import only after env preflight to avoid import-time side effects altering PUGSY_* vars.
+    from igscraper.pipeline import Pipeline
     pipeline = Pipeline(config_path=config_path)
     pipeline.run()
 
 
 def _cmd_bootstrap(args: argparse.Namespace) -> None:
+    _print_browser_binary_paths_first()
     print("Starting bootstrap...")
     print(f"  Cache root: {get_slug_cache_dir()}")
     print(f"  Config path: {get_cached_config_path()}")
@@ -123,6 +266,7 @@ def _cmd_bootstrap(args: argparse.Namespace) -> None:
 
 
 def _cmd_show_config(_args: argparse.Namespace) -> None:
+    _print_browser_binary_paths_first()
     cached = get_cached_config_path()
     print("=== Bundled sample config (config.example.toml) ===\n")
     print(read_bundled_sample_config_text().rstrip() + "\n")
@@ -166,7 +310,25 @@ def _list_cookie_paths() -> list[Path]:
 
 
 def _cmd_save_cookie(args: argparse.Namespace) -> None:
+    def _update_cached_config_cookie_file_abs(latest_cookie_path: Path) -> None:
+        cfg = get_cached_config_path()
+        if not cfg.is_file():
+            return
+        try:
+            data = toml.load(str(cfg))
+            data_section = data.get("data")
+            if not isinstance(data_section, dict):
+                return
+            data_section["cookie_file"] = str(latest_cookie_path.resolve())
+            cfg.write_text(toml.dumps(data), encoding="utf-8")
+            print(f"  Updated config cookie_file: {data_section['cookie_file']}")
+        except Exception:
+            # Keep save-cookie robust; capture result is still valid even if config update fails.
+            return
+
+    _print_browser_binary_paths_first()
     result = capture_login_cookies(args.username)
+    _update_cached_config_cookie_file_abs(result.latest_path)
     print("Cookie capture complete.")
     print(f"  Username:        {result.username}")
     print(f"  Browser version: {result.browser_version}")
@@ -227,8 +389,9 @@ def _build_parser() -> argparse.ArgumentParser:
         default=True,
         help=(
             "Run postgres table/index setup using bundled postgres_setup.sql. "
-            "Uses local defaults when PUGSY_PG_* are unset (host localhost, port 5433, "
-            "user postgres, database postgres); on success writes ~/.slug/.env. "
+            "Uses local defaults when PUGSY_PG_* are unset (host localhost, port 5432, "
+            "database postgres; on macOS user defaults to your login when unset). "
+            "On success writes ~/.slug/.env. "
             "Use --no-setup-postgres to skip."
         ),
     )

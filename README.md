@@ -104,7 +104,7 @@ These are the knobs people usually need first. Full TOML lives in **`config.exam
 | **`PUGSY_PG_*` env vars** | Postgres connection for `FileEnqueuer` (see `enqueue_client.py`). |
 | **`GOOGLE_APPLICATION_CREDENTIALS`** | Typical GCP auth for GCS when uploading. |
 
-**Environment overrides for binaries:** `CHROME_BIN`, `CHROMEDRIVER_BIN` beat optional `[main].chrome_binary_path` / `chromedriver_binary_path`.
+**Environment overrides for binaries:** `CHROME_BIN`, `CHROMEDRIVER_BIN` beat optional `[main].chrome_binary_path` / `chromedriver_binary_path`. On **macOS**, if neither env nor config nor `~/.slug/browser` cache supplies Chrome, the pipeline falls back to **`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`** when that file exists. **`IGSCRAPER_OMIT_CHROME_USER_DATA_DIR=1`** (save-cookie and `run`) skips `--user-data-dir` for debugging corrupted profiles.
 
 ---
 
@@ -121,7 +121,7 @@ These are the knobs people usually need first. Full TOML lives in **`config.exam
 
 After install, the **`Slug-Ig-Crawler`** console script is on your `PATH` (legacy alias `igscraper` is still provided for compatibility). Dependencies are declared in **`pyproject.toml`**.
 
-**Chrome / ChromeDriver (macOS and Linux):** `pip` does not download browsers. After `pip install "slug-ig-crawler[all]"` (or any install), run **`Slug-Ig-Crawler bootstrap`** once to fetch **stable** Chrome for Testing + matching ChromeDriver into **`~/.slug/browser/<platform>/`** and install a sample **`~/.slug/config.toml`** if missing. Until then, the first pipeline run prints a **stderr warning** suggesting bootstrap (silence with `IGSCRAPER_SILENT_BROWSER_CACHE_WARN=1`). Inspect templates with **`Slug-Ig-Crawler show-config`**.
+**Chrome / ChromeDriver (macOS and Linux):** `pip` does not download browsers. After `pip install "slug-ig-crawler[all]"` (or any install), run **`Slug-Ig-Crawler bootstrap`** once to fetch Chrome for Testing + matching ChromeDriver for **pinned full version `143.0.7499.169`** (from Google’s known-good index) into **`~/.slug/browser/<platform>/`**, and install a sample **`~/.slug/config.toml`** if missing. Override the build with **`IGSCRAPER_CFT_FULL_VERSION`** (must be a version listed in Google’s JSON). Until binaries exist, the first pipeline run prints a **stderr warning** suggesting bootstrap (silence with `IGSCRAPER_SILENT_BROWSER_CACHE_WARN=1`). Inspect templates with **`Slug-Ig-Crawler show-config`**.
 
 **Publishing to PyPI (maintainers):** see [docs/PYPI_RELEASE.md](docs/PYPI_RELEASE.md) (Trusted Publishing + release checklist; canonical org repo **Pugsyfy/Slug-IG-Crawler**). Release notes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
@@ -134,7 +134,7 @@ After install, the **`Slug-Ig-Crawler`** console script is on your `PATH` (legac
 | Step | Action |
 |------|--------|
 | 1 | Create and activate a virtualenv: `python3 -m venv .venv && source .venv/bin/activate` (Windows: `.venv\Scripts\activate`). |
-| 2 | Install from PyPI: `pip install "slug-ig-crawler[all]"`. Then run **`Slug-Ig-Crawler bootstrap`** to cache stable Chrome + ChromeDriver, seed `~/.slug/config.toml`, and (by default) apply the bundled Postgres schema using **local defaults** (`localhost:5433`, user `postgres`, database `postgres`). On success, **`~/.slug/.env`** is written with the effective `PUGSY_PG_*` values. |
+| 2 | Install from PyPI: `pip install "slug-ig-crawler[all]"`. Then run **`Slug-Ig-Crawler bootstrap`** to cache stable Chrome + ChromeDriver, seed `~/.slug/config.toml`, and (by default) apply the bundled Postgres schema using **local defaults** (`localhost:5432`, database `postgres`; on **macOS Homebrew** the default DB user is your **login name**, elsewhere `postgres`; set `PUGSY_PG_PORT=5433` if your DB is on a Docker-mapped port). On success, **`~/.slug/.env`** is written with the effective `PUGSY_PG_*` values. |
 | 3 | **Postgres (required if you use enqueue):** ensure Postgres is reachable at those defaults, or set `PUGSY_PG_*` in your shell, a project `.env`, or edit `~/.slug/.env`. If you **do not** have `psql` yet, from a **git clone** run **`./scripts/install_postgres_local.sh`** (macOS Homebrew; Linux apt/dnf/yum; starts the Postgres service via `brew services` or `systemctl` when possible). You can also run `psql` manually: `psql "$YOUR_DATABASE_URL" -f scripts/postgres_setup.sql`. Use **`Slug-Ig-Crawler bootstrap --no-setup-postgres`** to skip schema setup. |
 | 4 | Run `Slug-Ig-Crawler save-cookie --username <instagram_username>` once, then set **`[data].cookie_file`** in `~/.slug/config.toml` (recommended: `~/.slug/cookies/latest.json`) and set **`[trace].thor_worker_id`** (any non-empty string, e.g. `local-dev`). Set **`push_to_gcs`** to `0` for a local-only trial without GCP. |
 | 5 | **Profile mode:** keep `[main].target_profiles` populated and ensure **`[data].urls_filepath`** is missing or points to a file that does **not** exist. **URL mode:** one URL per line in a file; set **`[data].urls_filepath`** to that real path. |
@@ -260,9 +260,9 @@ The `cli.py` module serves as the **single entry point** for the application. It
 | Command | Purpose |
 |--------|---------|
 | `run` (default) | Load config and run the pipeline. |
-| `bootstrap` | Download stable Chrome + ChromeDriver into `~/.slug/browser/…` and copy sample config to `~/.slug/config.toml` if absent (`--force` / `--force-config` available). |
+| `bootstrap` | Download Chrome for Testing + ChromeDriver for **`143.0.7499.169`** (override with `IGSCRAPER_CFT_FULL_VERSION`) into `~/.slug/browser/…` and copy sample config to `~/.slug/config.toml` if absent (`--force` / `--force-config` available). Re-downloads if the cache is not the pinned full version (see `~/.slug/browser/<platform>/.cft-pinned-version`). |
 | `show-config` | Print the bundled sample TOML plus discovered cache config/cookie paths. |
-| `save-cookie` | Open Instagram login flow and save JSON cookies to `~/.slug/cookies/<browserVersion>_<username>_<timestamp>.json` (also updates `~/.slug/cookies/latest.json`). |
+| `save-cookie` | Open Instagram login flow and save JSON cookies to `~/.slug/cookies/<browserVersion>_<username>_<timestamp>.json` (also updates `~/.slug/cookies/latest.json`). Uses the **same Chrome + ChromeDriver pair as `bootstrap`** (`~/.slug/browser/...`) unless you set both `CHROME_BIN` and `CHROMEDRIVER_BIN`; **major versions must match** (checked before launch). If bootstrap is missing on **macOS**, the tool falls back to **`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`** plus **`chromedriver` on `PATH`** (e.g. Homebrew) when both exist. **Default:** ephemeral Chrome profile (no `--user-data-dir`, matching the stable Linux-UA + `--remote-debugging-pipe` + CDP `navigator.platform` flow). Set **`IGSCRAPER_COOKIE_USE_USER_DATA_DIR=1`** or **`CHROME_USER_DATA_DIR`** for a persistent profile under `~/.slug/chrome-user-data/save-cookie/<username>/`. `IGSCRAPER_OMIT_CHROME_USER_DATA_DIR=1` forces ephemeral. Runs in a **fresh Python subprocess** by default; `IGSCRAPER_COOKIE_NO_SUBPROCESS=1` forces in-process (debug only). **macOS:** If Chrome for Testing crashes with `multi-threaded process forked` / fork pre-exec, run from **Terminal.app** instead of an IDE terminal; the CLI sets `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` before Selenium loads. `bootstrap` strips `com.apple.quarantine` from cached ChromeDriver when needed; you can also run `xattr -d com.apple.quarantine $(which chromedriver)` manually. |
 | `list-cookies` | Print only cached cookie JSON paths from `~/.slug/cookies`. |
 | `version` | Print installed package version. |
 
@@ -1041,8 +1041,8 @@ This section lists **outbound** integrations (cloud, database, HTTP) and what is
 | Variable | Role (defaults in code) |
 |----------|-------------------------|
 | `PUGSY_PG_HOST` | Host (`localhost`) |
-| `PUGSY_PG_PORT` | Port (`5433`) |
-| `PUGSY_PG_USER` | User (`postgres`) |
+| `PUGSY_PG_PORT` | Port (`5432` default; use `5433` if Postgres listens on a Docker-mapped port) |
+| `PUGSY_PG_USER` | User (`postgres` when unset on Linux; on **macOS** defaults to your **login** — Homebrew often has no `postgres` role) |
 | `PUGSY_PG_PASSWORD` | Password (empty default) |
 | `PUGSY_PG_DATABASE` | Database name (`postgres` when unset — typical local default; **override for production**) |
 

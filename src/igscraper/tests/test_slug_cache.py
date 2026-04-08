@@ -204,3 +204,16 @@ def test_list_cookie_paths(monkeypatch, tmp_path):
     assert (cookie_dir / "latest.json").resolve() in paths
     assert (cookie_dir / "a.json").resolve() in paths
     assert all(p.suffix == ".json" for p in paths)
+
+
+def test_resolve_cft_platform_env_override(monkeypatch):
+    monkeypatch.setenv("IGSCRAPER_CFT_PLATFORM", "linux64")
+    assert resolve_cft_platform() == "linux64"
+    monkeypatch.setenv("IGSCRAPER_CFT_PLATFORM", "mac-x64")
+    assert resolve_cft_platform() == "mac-x64"
+
+
+def test_resolve_cft_platform_env_invalid(monkeypatch):
+    monkeypatch.setenv("IGSCRAPER_CFT_PLATFORM", "windows")
+    with pytest.raises(OSError, match="IGSCRAPER_CFT_PLATFORM"):
+        resolve_cft_platform()

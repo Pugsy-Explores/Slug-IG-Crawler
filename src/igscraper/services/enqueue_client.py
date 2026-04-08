@@ -7,7 +7,7 @@ from typing import Literal, Optional
 
 import psycopg
 from igscraper.logger import get_logger
-from igscraper.pg_env import DEFAULT_PG_DATABASE, load_dotenv_for_app
+from igscraper.pg_env import DEFAULT_PG_DATABASE, default_pg_user_when_unset, load_dotenv_for_app
 
 logger = get_logger(__name__)
 load_dotenv_for_app()
@@ -33,10 +33,11 @@ class PostgresConfig:
 
     @classmethod
     def from_env(cls) -> "PostgresConfig":
+        raw_u = (os.environ.get("PUGSY_PG_USER") or "").strip()
         return cls(
             host=os.environ.get("PUGSY_PG_HOST", "localhost"),
-            port=int(os.environ.get("PUGSY_PG_PORT", "5433")),
-            user=os.environ.get("PUGSY_PG_USER", "postgres"),
+            port=int(os.environ.get("PUGSY_PG_PORT", "5432")),
+            user=raw_u if raw_u else default_pg_user_when_unset(),
             password=os.environ.get("PUGSY_PG_PASSWORD", ""),
             database=os.environ.get("PUGSY_PG_DATABASE") or DEFAULT_PG_DATABASE,
         )

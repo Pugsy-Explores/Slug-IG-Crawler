@@ -3,13 +3,37 @@ from __future__ import annotations
 
 import os
 
+import igscraper.pg_env as pg_env_mod
+
 from igscraper.pg_env import (
     DEFAULT_PG_DATABASE,
+    DEFAULT_PG_PORT,
     ResolvedPgEnv,
     apply_resolved_to_environ,
     resolve_pg_env_for_bootstrap,
     write_cached_dotenv,
 )
+
+
+def test_resolve_default_port_when_unset(monkeypatch):
+    monkeypatch.delenv("PUGSY_PG_PORT", raising=False)
+    r = resolve_pg_env_for_bootstrap(apply_default_database=True)
+    assert r.port == DEFAULT_PG_PORT == 5432
+
+
+def test_default_user_darwin_uses_getuser(monkeypatch):
+    monkeypatch.delenv("PUGSY_PG_USER", raising=False)
+    monkeypatch.setattr(pg_env_mod.sys, "platform", "darwin")
+    monkeypatch.setattr(pg_env_mod.getpass, "getuser", lambda: "alice")
+    r = resolve_pg_env_for_bootstrap(apply_default_database=True)
+    assert r.user == "alice"
+
+
+def test_default_user_linux_uses_postgres(monkeypatch):
+    monkeypatch.delenv("PUGSY_PG_USER", raising=False)
+    monkeypatch.setattr(pg_env_mod.sys, "platform", "linux")
+    r = resolve_pg_env_for_bootstrap(apply_default_database=True)
+    assert r.user == "postgres"
 
 
 def test_resolve_uses_default_database_when_unset(monkeypatch):

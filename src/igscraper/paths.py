@@ -3,7 +3,9 @@ Centralized paths for Slug-Ig-Crawler user cache under ``~/.slug``.
 """
 from __future__ import annotations
 
+import os
 import platform
+import re
 import sys
 from pathlib import Path
 from typing import Optional, Tuple
@@ -13,6 +15,7 @@ CACHED_CONFIG_FILENAME = "config.toml"
 CACHED_DOTENV_FILENAME = ".env"
 BROWSER_SUBDIR = "browser"
 COOKIES_SUBDIR = "cookies"
+CHROME_USER_DATA_SUBDIR = "chrome-user-data"
 
 # Chrome for Testing JSON platform keys (linux64, mac-arm64, mac-x64).
 CftPlatform = str
@@ -43,12 +46,46 @@ def get_latest_cookie_path() -> Path:
     return get_cookie_cache_dir() / "latest.json"
 
 
+def get_cookie_capture_chrome_user_data_dir(username: str) -> Path:
+    """
+    Persistent Chrome profile for :func:`igscraper.login_Save_cookie.capture_login_cookies`.
+
+    Lives under ``~/.slug/chrome-user-data/save-cookie/<sanitized_username>/`` so sessions
+    do not collide with the system Chrome profile. Override with env ``CHROME_USER_DATA_DIR``.
+    """
+    cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "_", (username or "").strip()).strip("._-")
+    seg = cleaned or "default"
+    return get_slug_cache_dir() / CHROME_USER_DATA_SUBDIR / "save-cookie" / seg
+
+
+def describe_cft_host() -> str:
+    """Short host id for logs, e.g. ``darwin/arm64`` or ``linux/x86_64``."""
+    return f"{sys.platform}/{platform.machine()}"
+
+
 def resolve_cft_platform() -> CftPlatform:
     """
-    Map OS/arch to Chrome for Testing ``platform`` field.
+    Map **this** OS/arch to Chrome for Testing JSON ``platform`` keys (download URLs).
+
+    - Linux → ``linux64`` (x86_64/amd64 runners; CFT does not publish arm64 Linux in this index).
+    - macOS → ``mac-arm64`` vs ``mac-x64`` from :func:`platform.machine` (arm64/aarch64 vs Intel;
+      Rosetta x86_64 Python reports ``x86_64`` → ``mac-x64``, which matches the binary you need).
+
+    Override (expert / CI): set ``IGSCRAPER_CFT_PLATFORM`` to ``linux64``, ``mac-arm64``, or
+    ``mac-x64`` when auto-detection must be forced.
 
     Supports macOS and Linux only (raises on other OS).
     """
+    override = (os.environ.get("IGSCRAPER_CFT_PLATFORM") or "").strip()
+    if override:
+        allowed: frozenset[str] = frozenset({"linux64", "mac-arm64", "mac-x64"})
+        if override not in allowed:
+            raise OSError(
+                f"IGSCRAPER_CFT_PLATFORM must be one of {sorted(allowed)}, got {override!r}. "
+                f"Host is {describe_cft_host()}."
+            )
+        return override
+
     if sys.platform == "linux":
         return "linux64"
     if sys.platform == "darwin":
@@ -57,8 +94,8 @@ def resolve_cft_platform() -> CftPlatform:
             return "mac-arm64"
         return "mac-x64"
     raise OSError(
-        f"Unsupported platform for bundled Chrome bootstrap: {sys.platform!r}. "
-        "Supported: macOS, Linux."
+        f"Unsupported platform for bundled Chrome bootstrap: {sys.platform!r} "
+        f"({describe_cft_host()}). Supported: macOS, Linux."
     )
 
 

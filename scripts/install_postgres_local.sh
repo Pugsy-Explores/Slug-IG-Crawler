@@ -7,8 +7,8 @@
 #   ./scripts/install_postgres_local.sh
 #   DRY_RUN=1 ./scripts/install_postgres_local.sh
 #
-# Native packages usually listen on 5432; this project defaults to PUGSY_PG_PORT=5433 for
-# Docker-style setups — set PUGSY_PG_PORT / postgresql.conf as needed.
+# Default Postgres port is 5432 (matches bootstrap and ~/.slug/.env). Use PUGSY_PG_PORT=5433
+# if your DB is only exposed on a Docker-mapped port.
 #
 set -Eeuo pipefail
 

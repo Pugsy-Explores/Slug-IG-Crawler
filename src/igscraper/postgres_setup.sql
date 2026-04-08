@@ -10,8 +10,8 @@
 --
 -- ENV VARS (see src/igscraper/services/enqueue_client.py)
 --   PUGSY_PG_HOST      default localhost
---   PUGSY_PG_PORT      default 5433
---   PUGSY_PG_USER      default postgres
+--   PUGSY_PG_PORT      default 5432 (use 5433 if your Docker maps host port that way)
+--   PUGSY_PG_USER      default postgres (Linux/Docker); macOS Homebrew → login name when unset
 --   PUGSY_PG_PASSWORD
 --   PUGSY_PG_DATABASE  default postgres (local); override for production
 --   Bootstrap writes ~/.slug/.env after successful setup.

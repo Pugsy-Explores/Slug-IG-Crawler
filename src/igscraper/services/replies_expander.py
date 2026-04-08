@@ -8,6 +8,36 @@ from datetime import datetime, timezone
 from typing import Optional
 import logging
 from igscraper.logger import get_logger
+from igscraper.utils import find_comment_container
+
+
+def scroll_container_into_view_native(
+    driver: WebDriver,
+    container_selector: str,
+) -> bool:
+    """
+    Re-anchor the comment container in the viewport using DOM Element.scrollIntoView.
+    Call after ARROW_DOWN only when testing whether native scrolling reduces viewport drift.
+    Returns True if document.querySelector matched an element.
+    """
+    # Stricter top snap (optional A/B); keep commented — do not delete.
+    # driver.execute_script(
+    #     "var el = document.querySelector(arguments[0]);"
+    #     "if (el) el.scrollIntoView({ block: 'start', inline: 'nearest' });",
+    #     container_selector,
+    # )
+    return bool(
+        driver.execute_script(
+            """
+            var el = document.querySelector(arguments[0]);
+            if (!el) return false;
+            el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            return true;
+            """,
+            container_selector,
+        )
+    )
+
 
 class ReplyExpander:
     """
@@ -1421,14 +1451,101 @@ class ReplyExpander:
         # Helpers
         # -------------------------------
 
-        def safe_focus_container(container_el):
+        def safe_focus_container():
             """
             Click a guaranteed-safe offset inside the container
             (top-left padding area, no interactive elements).
             """
+            nonlocal container_el, container_selector
             rect = container_el.rect
             x = rect["x"] + 2
             y = rect["y"] + 2
+            url_before = driver.current_url
+            under = None
+            try:
+                under = driver.execute_script(
+                    """
+                    var el = document.elementFromPoint(arguments[0], arguments[1]);
+                    if (!el) return null;
+                    var a = el.closest('a');
+                    return {
+                        tag: el.tagName,
+                        href: a ? a.getAttribute('href') : null
+                    };
+                    """,
+                    int(round(x)),
+                    int(round(y)),
+                )
+            except Exception:
+                pass
+
+            if under and under.get("href"):
+                self.log.debug(
+                    "safe_focus_container: href under focus pixel (%r); sleeping 0.5s "
+                    "then scrollIntoView recovery",
+                    under.get("href"),
+                )
+                time.sleep(0.5)
+                ok = scroll_container_into_view_native(driver, container_selector)
+                if not ok:
+                    info = find_comment_container(driver)
+                    ns = (info or {}).get("selector")
+                    if ns:
+                        self.log.debug(
+                            "safe_focus_container: querySelector miss for %r; using "
+                            "find_comment_container selector %r",
+                            container_selector,
+                            ns,
+                        )
+                        container_selector = ns
+                        scroll_container_into_view_native(driver, container_selector)
+                try:
+                    container_el = driver.find_element(
+                        By.CSS_SELECTOR, container_selector
+                    )
+                except Exception as e:
+                    self.log.debug(
+                        "safe_focus_container: refind container after recovery failed: %s",
+                        e,
+                    )
+                rect = container_el.rect
+                x = rect["x"] + 2
+                y = rect["y"] + 2
+                under = None
+                try:
+                    under = driver.execute_script(
+                        """
+                        var el = document.elementFromPoint(arguments[0], arguments[1]);
+                        if (!el) return null;
+                        var a = el.closest('a');
+                        return {
+                            tag: el.tagName,
+                            href: a ? a.getAttribute('href') : null
+                        };
+                        """,
+                        int(round(x)),
+                        int(round(y)),
+                    )
+                except Exception:
+                    pass
+                self.log.debug(
+                    "safe_focus_container: post-recovery viewport_click=(%.1f,%.1f) "
+                    "top_under_point=%s",
+                    x,
+                    y,
+                    under,
+                )
+
+            self.log.debug(
+                "safe_focus_container: expected non-navigating focus click inside "
+                "comment container (2px inset from bbox top-left); selector=%r "
+                "container_rect=%s viewport_click=(%.1f,%.1f) top_under_point=%s",
+                container_selector,
+                {k: rect.get(k) for k in ("x", "y", "width", "height")},
+                x,
+                y,
+                under,
+            )
 
             from selenium.webdriver.common.actions.pointer_input import PointerInput
             from selenium.webdriver.common.actions.action_builder import ActionBuilder
@@ -1438,6 +1555,15 @@ class ReplyExpander:
             ab.pointer_action.move_to_location(x, y)
             ab.pointer_action.click()
             ab.perform()
+
+            url_after = driver.current_url
+            if url_after != url_before:
+                self.log.debug(
+                    "safe_focus_container: URL changed after focus click (possible new page): "
+                    "%r -> %r",
+                    url_before,
+                    url_after,
+                )
 
         def clamp_page_scroll(max_allowed=50):
             """
@@ -1458,7 +1584,7 @@ class ReplyExpander:
 
         container_el = driver.find_element(By.CSS_SELECTOR, container_selector)
 
-        safe_focus_container(container_el)
+        safe_focus_container()
         time.sleep(random.uniform(0.3, 0.6))
 
         start_time = time.time()
@@ -1467,6 +1593,12 @@ class ReplyExpander:
 
         KEY_CHOICES = [Keys.SPACE, Keys.ARROW_DOWN]
         KEY_WEIGHTS = [0.1, 0.9]
+        # Selenium Keys.* values are WebDriver Unicode sentinels; str(key) is not terminal-safe.
+        _KEY_DEBUG_LABEL = {
+            Keys.SPACE: "SPACE",
+            Keys.ARROW_DOWN: "ARROW_DOWN",
+            Keys.ARROW_UP: "ARROW_UP",
+        }
 
         # -------------------------------
         # Main loop
@@ -1484,10 +1616,17 @@ class ReplyExpander:
             burst = random.randint(1, 3)
             for _ in range(burst):
                 key = random.choices(KEY_CHOICES, weights=KEY_WEIGHTS)[0]
-                self.log.debug(f"Sending key: {key}")
+                self.log.debug(
+                    "Sending key: %s",
+                    _KEY_DEBUG_LABEL.get(key, repr(key)),
+                )
                 if key == Keys.SPACE:
                     step += 6
                 actions.send_keys(key).perform()
+                # After ARROW_DOWN only: native DOM scroll so container stays in viewport (trial).
+                if key == Keys.ARROW_DOWN:
+                    scroll_container_into_view_native(driver, container_selector)
+                # Burst pacing (unchanged from pre-scrollIntoView behavior).
                 time.sleep(random.uniform(0.15, 0.35))
 
             # ---- Rare upward correction (human micro-adjustment) ----
@@ -1504,7 +1643,7 @@ class ReplyExpander:
             # ---- Periodic refocus (focus *will* get stolen) ----
             if step % 2 == 0:
                 try:
-                    safe_focus_container(container_el)
+                    safe_focus_container()
                     time.sleep(random.uniform(0.2, 0.4))
                 except Exception:
                     pass

@@ -1,11 +1,14 @@
 """
-Download Chrome for Testing (stable) + matching ChromeDriver into ``~/.slug`` and
-optionally install the bundled sample config at ``~/.slug/config.toml``.
+Download Chrome for Testing (pinned **full** version, default ``143.0.7499.169``) + matching ChromeDriver
+into ``~/.slug`` and optionally install the bundled sample config at ``~/.slug/config.toml``.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import stat
+import subprocess
+import sys
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -14,10 +17,13 @@ from typing import Any, Callable, Optional
 import requests
 import psycopg
 
+from igscraper.chrome_compat import try_strip_quarantine_macos
 from igscraper.paths import (
     chrome_executable_path_after_extract,
     chromedriver_executable_path_after_extract,
+    get_browser_platform_dir,
     get_cached_config_path,
+    get_cached_dotenv_path,
     get_chrome_extract_dir,
     get_chromedriver_extract_dir,
     get_slug_cache_dir,
@@ -29,10 +35,13 @@ from igscraper.pg_env import (
     write_cached_dotenv,
 )
 
-CFT_LKG_URL = (
+# Exact builds (Chrome + ChromeDriver URLs stay in lockstep per version).
+CFT_KNOWN_GOOD_JSON_URL = (
     "https://googlechromelabs.github.io/chrome-for-testing/"
-    "last-known-good-versions-with-downloads.json"
+    "known-good-versions-with-downloads.json"
 )
+# Default exact Chrome for Testing build (override with IGSCRAPER_CFT_FULL_VERSION).
+DEFAULT_CFT_FULL_VERSION = "143.0.7499.169"
 
 
 @dataclass
@@ -67,21 +76,74 @@ def read_bundled_sample_config_text() -> str:
     )
 
 
-def _fetch_stable_download_urls(cft_platform: str) -> tuple[str, str, str]:
-    """Return (chrome_version, chrome_zip_url, chromedriver_zip_url)."""
+def _resolve_cft_full_version() -> str:
+    """Full build id (e.g. ``143.0.7499.169``). Env ``IGSCRAPER_CFT_FULL_VERSION`` overrides default."""
+    raw = (os.environ.get("IGSCRAPER_CFT_FULL_VERSION") or "").strip()
+    return raw if raw else DEFAULT_CFT_FULL_VERSION
+
+
+def _cft_pin_marker_path(cft_platform: str) -> Path:
+    """Written after a successful download; holds the full pinned ``x.y.z.w`` string."""
+    return get_browser_platform_dir(cft_platform) / ".cft-pinned-version"
+
+
+def validate_cft_download_urls_for_platform(
+    cft_platform: str, chrome_url: str, driver_url: str
+) -> None:
+    """
+    Ensure both URLs are https and contain the official per-platform path segment.
+
+    Chrome for Testing publishes separate zips per platform; this catches bad metadata
+    or wrong ``platform`` keys before downloading hundreds of MB.
+    """
+    if not chrome_url.startswith("https://") or not driver_url.startswith("https://"):
+        raise RuntimeError(
+            "Chrome and ChromeDriver download URLs must use https. "
+            f"chrome={chrome_url!r} driver={driver_url!r}"
+        )
+    slug_by_platform: dict[str, str] = {
+        "linux64": "linux64",
+        "mac-arm64": "mac-arm64",
+        "mac-x64": "mac-x64",
+    }
+    slug = slug_by_platform.get(cft_platform)
+    if not slug:
+        raise RuntimeError(f"Unknown CFT platform: {cft_platform!r}")
+    if slug not in chrome_url or slug not in driver_url:
+        raise RuntimeError(
+            f"Download URL platform mismatch for resolved platform {cft_platform!r}: "
+            f"expected path segment {slug!r} in both URLs.\n"
+            f"  chrome: {chrome_url}\n"
+            f"  driver: {driver_url}"
+        )
+
+
+def _fetch_pinned_full_version_download_urls(
+    cft_platform: str, full_version: str
+) -> tuple[str, str, str]:
+    """Return (chrome_version, chrome_zip_url, chromedriver_zip_url) for an exact known-good build."""
     try:
-        r = requests.get(CFT_LKG_URL, timeout=60)
+        r = requests.get(CFT_KNOWN_GOOD_JSON_URL, timeout=120)
         r.raise_for_status()
         data: dict[str, Any] = r.json()
     except requests.RequestException as e:
         raise RuntimeError(f"Failed to fetch Chrome for Testing metadata: {e}") from e
 
-    stable = (data.get("channels") or {}).get("Stable")
-    if not stable:
-        raise RuntimeError("Chrome for Testing JSON missing channels.Stable")
+    versions: list[dict[str, Any]] = data.get("versions") or []
+    entry: Optional[dict[str, Any]] = None
+    for v in versions:
+        if str(v.get("version") or "") == full_version:
+            entry = v
+            break
+    if not entry:
+        raise RuntimeError(
+            f"Chrome for Testing JSON has no known-good entry for version {full_version!r}. "
+            "See https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json "
+            "or set IGSCRAPER_CFT_FULL_VERSION to a listed build."
+        )
 
-    version = str(stable.get("version") or "")
-    downloads = stable.get("downloads") or {}
+    version = str(entry.get("version") or full_version)
+    downloads = entry.get("downloads") or {}
     chrome_list = downloads.get("chrome") or []
     driver_list = downloads.get("chromedriver") or []
 
@@ -95,8 +157,10 @@ def _fetch_stable_download_urls(cft_platform: str) -> tuple[str, str, str]:
     du = _pick(driver_list, cft_platform)
     if not cu or not du:
         raise RuntimeError(
-            f"No Stable Chrome/ChromeDriver URLs for platform {cft_platform!r} in metadata."
+            f"No Chrome/ChromeDriver URLs for version {full_version!r}, "
+            f"platform {cft_platform!r} in metadata."
         )
+    validate_cft_download_urls_for_platform(cft_platform, cu, du)
     return version, cu, du
 
 
@@ -123,6 +187,93 @@ def _chmod_plus_x(path: Path) -> None:
     path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
+def _apply_macos_cft_tree_fixes(chrome_dir: Path, cft_platform: str) -> None:
+    """
+    macOS CFT fixups for downloaded app bundles.
+
+    For mac-arm64 we run the equivalent of:
+    - chmod -R +x "<...>/Google Chrome for Testing.app"
+    - xattr -dr com.apple.quarantine "<...>/chrome-mac-arm64/"
+    """
+    if sys.platform != "darwin" or cft_platform != "mac-arm64":
+        return
+    cft_root = chrome_dir / "chrome-mac-arm64"
+    app_bundle = cft_root / "Google Chrome for Testing.app"
+    if app_bundle.exists():
+        try:
+            subprocess.run(
+                ["chmod", "-R", "+x", str(app_bundle)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except OSError:
+            pass
+    if cft_root.exists():
+        try:
+            subprocess.run(
+                ["xattr", "-dr", "com.apple.quarantine", str(cft_root)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except OSError:
+            pass
+
+
+def _apply_linux_cft_tree_chmod(chrome_dir: Path, cft_platform: str) -> None:
+    """
+    Linux CFT fixup: recursively ensure executable bits on extracted browser tree.
+
+    This mirrors the macOS recursive chmod intent, but Linux-only and chmod-only.
+    """
+    if not sys.platform.startswith("linux") or cft_platform != "linux64":
+        return
+    cft_root = chrome_dir / "chrome-linux64"
+    if not cft_root.exists():
+        return
+    try:
+        subprocess.run(
+            ["chmod", "-R", "+x", str(cft_root)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        pass
+
+
+def _write_browser_env_to_cached_dotenv(chrome_bin: Path, driver_bin: Path) -> Path:
+    """
+    Upsert CHROME_BIN and CHROMEDRIVER_BIN in ``~/.slug/.env``.
+
+    This keeps runtime browser resolution deterministic across docker/local runs.
+    """
+    dotenv_path = get_cached_dotenv_path()
+    get_slug_cache_dir().mkdir(parents=True, exist_ok=True)
+
+    existing: list[str] = []
+    if dotenv_path.is_file():
+        existing = dotenv_path.read_text(encoding="utf-8").splitlines()
+
+    kept: list[str] = []
+    for line in existing:
+        if line.startswith("CHROME_BIN=") or line.startswith("CHROMEDRIVER_BIN="):
+            continue
+        kept.append(line)
+
+    if kept and kept[-1] != "":
+        kept.append("")
+    # Quote values so `. ~/.slug/.env` works even when paths include spaces.
+    chrome_q = str(chrome_bin).replace("'", "'\"'\"'")
+    driver_q = str(driver_bin).replace("'", "'\"'\"'")
+    kept.append(f"CHROME_BIN='{chrome_q}'")
+    kept.append(f"CHROMEDRIVER_BIN='{driver_q}'")
+    kept.append("")
+    dotenv_path.write_text("\n".join(kept), encoding="utf-8")
+    return dotenv_path
+
+
 def ensure_sample_config_in_cache(*, force: bool = False) -> tuple[Path, bool]:
     """
     Copy bundled sample to ``~/.slug/config.toml`` if missing (unless *force*).
@@ -141,6 +292,51 @@ def ensure_sample_config_in_cache(*, force: bool = False) -> tuple[Path, bool]:
 def _default_postgres_setup_sql_path() -> Path:
     # src/igscraper/bootstrap.py -> repo root/scripts/postgres_setup.sql
     return Path(__file__).resolve().parents[2] / "scripts" / "postgres_setup.sql"
+
+
+def pg_connection_failure_hint(exc: BaseException) -> str:
+    """
+    Extra context when Postgres TCP connect fails (nothing listening on host:port).
+
+    Typical cause: PostgreSQL server not started or wrong port/host.
+    """
+    msg = str(exc).lower()
+    if "connection refused" not in msg:
+        return ""
+    lines = [
+        "",
+        "Hint: PostgreSQL is not accepting connections on that host/port "
+        "(server usually not running, or wrong PUGSY_PG_*).",
+    ]
+    if sys.platform == "darwin":
+        lines.append(
+            "  macOS: brew services start postgresql@15   # or: brew services start postgresql"
+        )
+        lines.append("  Check: brew services list | grep -i postgres")
+    elif sys.platform.startswith("linux"):
+        lines.append(
+            "  Linux: sudo systemctl start postgresql   # or postgresql@<version>"
+        )
+    lines.append(
+        "  Or run from repo clone: ./scripts/install_postgres_local.sh"
+    )
+    lines.append(
+        "  To skip DB setup for now: Slug-Ig-Crawler bootstrap --no-setup-postgres"
+    )
+    return "\n".join(lines)
+
+
+def pg_role_missing_hint(exc: BaseException) -> str:
+    """When the server rejects the configured role (common with Homebrew + user ``postgres``)."""
+    msg = str(exc)
+    if 'role "postgres" does not exist' not in msg:
+        return ""
+    lines = [
+        "",
+        'Hint: Homebrew PostgreSQL often has no database role named "postgres".',
+        "  Omit PUGSY_PG_USER (bootstrap defaults to your macOS login), or run: createuser -s postgres",
+    ]
+    return "\n".join(lines)
 
 
 def _load_default_postgres_setup_sql() -> tuple[Optional[str], str]:
@@ -225,7 +421,8 @@ def _run_postgres_setup(
             "(crawled_posts, crawled_comments).",
         )
     except Exception as e:
-        return False, f"Postgres setup failed: {e}"
+        hint = pg_connection_failure_hint(e) + pg_role_missing_hint(e)
+        return False, f"Postgres setup failed: {e}{hint}"
 
 
 def run_bootstrap(
@@ -237,7 +434,10 @@ def run_bootstrap(
     progress: Optional[Callable[[str], None]] = None,
 ) -> BootstrapResult:
     """
-    Download stable Chrome + ChromeDriver for this OS/arch into ``~/.slug/browser/...``.
+    Download pinned **full-version** Chrome + ChromeDriver for this OS/arch into ``~/.slug/browser/...``.
+
+    Default build is **143.0.7499.169** (Chrome + ChromeDriver from Google’s known-good list). Override with
+    ``IGSCRAPER_CFT_FULL_VERSION``. Cache is reused only when ``.cft-pinned-version`` matches.
 
     If ``~/.slug/config.toml`` is missing, writes the bundled sample (unless *force_config*
     is used only when combined with ensure_sample — actually force_config overwrites config).
@@ -264,12 +464,43 @@ def run_bootstrap(
     _emit(f"Chrome cache dir: {chrome_dir}")
     _emit(f"ChromeDriver cache dir: {driver_dir}")
 
-    if (
+    full_version = _resolve_cft_full_version()
+    _emit(f"Pinned CFT full version: {full_version} (override with IGSCRAPER_CFT_FULL_VERSION)")
+    try:
+        version, chrome_url, driver_url = _fetch_pinned_full_version_download_urls(
+            cft_platform, full_version
+        )
+    except RuntimeError as e:
+        return BootstrapResult(
+            ok=False,
+            message=str(e),
+            cft_platform=cft_platform,
+            chrome_version="",
+        )
+
+    pin_marker = _cft_pin_marker_path(cft_platform)
+    cache_ok = (
         not force_browser
         and chrome_bin.is_file()
         and driver_bin.is_file()
-    ):
-        _emit("Found cached Chrome + ChromeDriver pair; skipping downloads.")
+        and pin_marker.is_file()
+        and pin_marker.read_text(encoding="utf-8").strip() == version
+    )
+
+    if cache_ok:
+        _emit(
+            f"Cached Chrome + ChromeDriver match pinned version {version}; skipping downloads."
+        )
+        if sys.platform == "darwin":
+            _apply_macos_cft_tree_fixes(chrome_dir, cft_platform)
+            try_strip_quarantine_macos(chrome_bin)
+            try_strip_quarantine_macos(driver_bin)
+        if sys.platform.startswith("linux"):
+            _apply_linux_cft_tree_chmod(chrome_dir, cft_platform)
+        dotenv_path = _write_browser_env_to_cached_dotenv(chrome_bin, driver_bin)
+        os.environ["CHROME_BIN"] = str(chrome_bin)
+        os.environ["CHROMEDRIVER_BIN"] = str(driver_bin)
+        _emit(f"Wrote browser env to {dotenv_path}")
         cfg_path, cfg_written = ensure_sample_config_in_cache(force=force_config)
         _emit(
             f"Sample config {'written' if cfg_written else 'already present'} at {cfg_path}"
@@ -298,7 +529,7 @@ def run_bootstrap(
                     ok=False,
                     message=pg_msg,
                     cft_platform=cft_platform,
-                    chrome_version="(cached)",
+                    chrome_version=version,
                     chrome_bin=chrome_bin,
                     chromedriver_bin=driver_bin,
                     config_path=cfg_path,
@@ -319,7 +550,7 @@ def run_bootstrap(
                     ok=False,
                     message=pg_msg,
                     cft_platform=cft_platform,
-                    chrome_version="(cached)",
+                    chrome_version=version,
                     chrome_bin=chrome_bin,
                     chromedriver_bin=driver_bin,
                     config_path=cfg_path,
@@ -333,7 +564,7 @@ def run_bootstrap(
             ok=True,
             message="Chrome and ChromeDriver already present in cache; skipped download.",
             cft_platform=cft_platform,
-            chrome_version="(cached)",
+            chrome_version=version,
             chrome_bin=chrome_bin,
             chromedriver_bin=driver_bin,
             config_path=cfg_path,
@@ -343,18 +574,7 @@ def run_bootstrap(
             postgres_message=pg_msg,
         )
 
-    _emit("Fetching latest stable Chrome for Testing metadata...")
-    try:
-        version, chrome_url, driver_url = _fetch_stable_download_urls(cft_platform)
-    except RuntimeError as e:
-        return BootstrapResult(
-            ok=False,
-            message=str(e),
-            cft_platform=cft_platform,
-            chrome_version="",
-        )
-
-    _emit(f"Stable Chrome version: {version}")
+    _emit(f"Pinned Chrome for Testing version: {version}")
     _emit(f"Chrome zip URL: {chrome_url}")
     _emit(f"ChromeDriver zip URL: {driver_url}")
 
@@ -398,6 +618,16 @@ def run_bootstrap(
 
     _chmod_plus_x(chrome_bin)
     _chmod_plus_x(driver_bin)
+    if sys.platform == "darwin":
+        _apply_macos_cft_tree_fixes(chrome_dir, cft_platform)
+        try_strip_quarantine_macos(chrome_bin)
+        try_strip_quarantine_macos(driver_bin)
+    if sys.platform.startswith("linux"):
+        _apply_linux_cft_tree_chmod(chrome_dir, cft_platform)
+    dotenv_path = _write_browser_env_to_cached_dotenv(chrome_bin, driver_bin)
+    os.environ["CHROME_BIN"] = str(chrome_bin)
+    os.environ["CHROMEDRIVER_BIN"] = str(driver_bin)
+    _emit(f"Wrote browser env to {dotenv_path}")
     _emit("Ensured executable permissions on browser binaries.")
 
     if not chrome_bin.is_file() or not driver_bin.is_file():
@@ -410,6 +640,10 @@ def run_bootstrap(
             cft_platform=cft_platform,
             chrome_version=version,
         )
+
+    pin_marker.parent.mkdir(parents=True, exist_ok=True)
+    pin_marker.write_text(version, encoding="utf-8")
+    _emit(f"Recorded pinned version in {pin_marker}")
 
     cfg_path, cfg_written = ensure_sample_config_in_cache(force=force_config)
     _emit(f"Sample config {'written' if cfg_written else 'already present'} at {cfg_path}")

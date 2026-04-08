@@ -38,7 +38,13 @@ from ..pages.profile_page import ProfilePage
 from ..logger import get_logger
 
 from igscraper.chrome import patch_driver
+from igscraper.chrome_compat import (
+    apply_automation_compat_flags,
+    macos_google_chrome_binary_if_present,
+    try_strip_quarantine_macos,
+)
 from igscraper.paths import get_cached_browser_binaries
+from igscraper.pg_env import load_dotenv_for_app
 from igscraper.utils import (
     HumanScroller,
     click_all_reply_buttons_gently,
@@ -105,26 +111,12 @@ def _which_chrome_executable() -> Optional[str]:
 
 # ⚠️ Suspicious navigation: chrome://new-tab-page/ patch it too
 def assert_chrome_versions_match(chrome_bin: str, chromedriver_bin: str):
-    def major_version(cmd):
-        out = subprocess.check_output([cmd, "--version"], text=True)
-        m = re.search(r"(\d+)\.", out)
-        if not m:
-            raise RuntimeError(f"Cannot parse version from: {out}")
-        return m.group(1), out.strip()
+    from igscraper.chrome_versions import assert_chrome_and_chromedriver_major_match
 
-    chrome_major, chrome_full = major_version(chrome_bin)
-    driver_major, driver_full = major_version(chromedriver_bin)
-
-    if chrome_major != driver_major:
-        raise RuntimeError(
-            "Chrome / ChromeDriver version mismatch:\n"
-            f"  Chrome:       {chrome_full}\n"
-            f"  ChromeDriver: {driver_full}"
-        )
-
-    logger.info(
-        f"Chrome versions OK: {chrome_full} | {driver_full}"
+    c_line, d_line, quad = assert_chrome_and_chromedriver_major_match(
+        chrome_bin, chromedriver_bin
     )
+    logger.info(f"Chrome versions OK: {quad} | {c_line} | {d_line}")
 
 
 class SeleniumBackend(Backend):
@@ -179,49 +171,21 @@ class SeleniumBackend(Backend):
 
     def _resolve_browser_binaries(self) -> tuple[str, str]:
         """
-        Chrome + ChromeDriver paths. CHROME_BIN and CHROMEDRIVER_BIN always win when set.
+        Resolve browser binaries from environment only.
 
-        If unset: Docker uses image paths; local uses optional main.chrome_binary_path /
-        main.chromedriver_binary_path then built-in macOS defaults.
+        ``~/.slug/.env`` is loaded first so bootstrap-provisioned values are available
+        to both docker and non-docker runs.
         """
-        m = self.config.main
-
-        def _strip_or_none(val: Optional[str]) -> Optional[str]:
-            if val is None:
-                return None
-            t = val.strip()
-            return t or None
-
-        chrome = os.environ.get("CHROME_BIN")
-        driver = os.environ.get("CHROMEDRIVER_BIN")
-
-        if self.config.main.use_docker:
-            chrome = chrome or _DOCKER_CHROME_BIN
-            driver = driver or _DOCKER_CHROMEDRIVER_BIN
-        else:
-            chrome = chrome or _strip_or_none(getattr(m, "chrome_binary_path", None))
-            driver = driver or _strip_or_none(getattr(m, "chromedriver_binary_path", None))
-            if not chrome or not driver:
-                c_cached, d_cached = get_cached_browser_binaries()
-                if not chrome and c_cached:
-                    chrome = str(c_cached)
-                if not driver and d_cached:
-                    driver = str(d_cached)
-            if not chrome:
-                w = _which_chrome_executable()
-                if w:
-                    chrome = w
-            if not driver:
-                w = shutil.which("chromedriver")
-                if w:
-                    driver = w
-            if not chrome or not driver:
-                raise RuntimeError(
-                    "Chrome and/or ChromeDriver not found. Set CHROME_BIN and CHROMEDRIVER_BIN, "
-                    "or [main].chrome_binary_path / chromedriver_binary_path in config, or run "
-                    "`Slug-Ig-Crawler bootstrap` to cache Chrome for Testing under ~/.slug/browser/. "
-                    f"(missing: chrome={not chrome}, chromedriver={not driver})"
-                )
+        load_dotenv_for_app()
+        chrome = (os.environ.get("CHROME_BIN") or "").strip()
+        driver = (os.environ.get("CHROMEDRIVER_BIN") or "").strip()
+        if not chrome or not driver:
+            raise RuntimeError(
+                "Missing CHROME_BIN and/or CHROMEDRIVER_BIN in environment.\n"
+                "Expected these to be sourced from ~/.slug/.env (written by bootstrap).\n"
+                "Run `Slug-Ig-Crawler bootstrap` and ensure ~/.slug/.env is present.\n"
+                f"(missing: chrome={not bool(chrome)}, chromedriver={not bool(driver)})"
+            )
 
         logger.info(
             "Browser binaries (CHROME_BIN/CHROMEDRIVER_BIN override when set): "
@@ -336,12 +300,8 @@ class SeleniumBackend(Backend):
         if self.config.main.headless:
             options.add_argument("--headless=new")
 
-
-        # --------------------------------------------------
-        # Environment-specific paths (CHROME_BIN / CHROMEDRIVER_BIN respected in all modes)
-        # --------------------------------------------------
         if self.config.main.use_docker:
-            profile_dir = os.getenv("IGSCRAPER_CHROME_PROFILE","/tmp/chrome-profile")
+            profile_dir = os.getenv("IGSCRAPER_CHROME_PROFILE", "/tmp/chrome-profile")
             platform = "Linux x86_64"
 
             options.add_argument("--no-sandbox")
@@ -351,8 +311,25 @@ class SeleniumBackend(Backend):
         else:
             profile_dir = os.getenv("IGSCRAPER_CHROME_PROFILE", "/tmp/chrome-profile")
             platform = "Linux x86_64"  # intentionally Linux-like
+            apply_automation_compat_flags(
+                options, headless=bool(self.config.main.headless)
+            )
 
-            options.add_argument("--remote-debugging-pipe")
+        omit_user_data = (os.getenv("IGSCRAPER_OMIT_CHROME_USER_DATA_DIR") or "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if omit_user_data:
+            profile_dir = None
+            logger.warning(
+                "IGSCRAPER_OMIT_CHROME_USER_DATA_DIR set: Chrome uses an ephemeral profile "
+                "(no --user-data-dir; use to test corrupted profile crashes)"
+            )
+
+        # --------------------------------------------------
+        # Environment-specific paths (CHROME_BIN / CHROMEDRIVER_BIN respected in all modes)
+        # --------------------------------------------------
 
         chrome_bin, chromedriver_bin = self._resolve_browser_binaries()
 
@@ -393,7 +370,8 @@ class SeleniumBackend(Backend):
 
         options.binary_location = chrome_bin
         options.add_argument(f"--user-agent={user_agent}")
-        options.add_argument(f"--user-data-dir={profile_dir}")
+        if profile_dir:
+            options.add_argument(f"--user-data-dir={profile_dir}")
         options.add_argument("--window-size=1920,1080")
         options.add_argument("--disable-blink-features=AutomationControlled")
 
@@ -404,6 +382,7 @@ class SeleniumBackend(Backend):
         # --------------------------------------------------
         # Start WebDriver
         # --------------------------------------------------
+        try_strip_quarantine_macos(Path(chromedriver_bin))
         service = Service(chromedriver_bin)
 
         self.driver = webdriver.Chrome(
