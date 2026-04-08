@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.27] - 2026-04-08
+
+### Added
+- **`scripts/install_postgres_local.sh`**: installs PostgreSQL when `psql` is missing (macOS via Homebrew; Linux via apt/dnf/yum). Idempotent if `psql` is already on `PATH`.
+- **`igscraper.postgres_local_install`**: small helpers for OS/Linux family detection (used by tests).
+
+### Changed
+- Removed machine-specific default Chrome paths from `selenium_backend`; portable fallbacks and clearer errors.
+- **`config.toml`** / **`assets/base_config.toml`**: `cookie_file` defaults to **`~/.slug/cookies/latest.json`**.
+
 ## [2.2.26] - 2026-04-08
 
 ### Added

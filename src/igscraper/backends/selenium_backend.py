@@ -8,6 +8,7 @@ import time
 import json
 import pickle
 import random
+import shutil
 import traceback
 from typing import Iterator, Dict, List, Any, Optional
 from urllib.parse import urlparse
@@ -83,16 +84,23 @@ import subprocess
 
 logger = get_logger(__name__)
 
-# Default local (macOS) paths when env and optional config omit binaries.
-_DEFAULT_LOCAL_CHROME_BIN = (
-    "/Users/shang/my_work/ig_profile_scraper/"
-    "chrome-mac-arm64/"
-    "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
-)
-_DEFAULT_LOCAL_CHROMEDRIVER_BIN = "/opt/homebrew/bin/chromedriver"
 # Dockerfile ENV defaults when use_docker=true and CHROME_* env not set.
 _DOCKER_CHROME_BIN = "/opt/chrome-linux64/chrome"
 _DOCKER_CHROMEDRIVER_BIN = "/opt/chromedriver-linux64/chromedriver"
+
+
+def _which_chrome_executable() -> Optional[str]:
+    """Best-effort PATH lookup for Chrome/Chromium (typical on Linux)."""
+    for name in (
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium",
+        "chromium-browser",
+    ):
+        p = shutil.which(name)
+        if p:
+            return p
+    return None
 
 
 # ⚠️ Suspicious navigation: chrome://new-tab-page/ patch it too
@@ -199,8 +207,21 @@ class SeleniumBackend(Backend):
                     chrome = str(c_cached)
                 if not driver and d_cached:
                     driver = str(d_cached)
-            chrome = chrome or _DEFAULT_LOCAL_CHROME_BIN
-            driver = driver or _DEFAULT_LOCAL_CHROMEDRIVER_BIN
+            if not chrome:
+                w = _which_chrome_executable()
+                if w:
+                    chrome = w
+            if not driver:
+                w = shutil.which("chromedriver")
+                if w:
+                    driver = w
+            if not chrome or not driver:
+                raise RuntimeError(
+                    "Chrome and/or ChromeDriver not found. Set CHROME_BIN and CHROMEDRIVER_BIN, "
+                    "or [main].chrome_binary_path / chromedriver_binary_path in config, or run "
+                    "`Slug-Ig-Crawler bootstrap` to cache Chrome for Testing under ~/.slug/browser/. "
+                    f"(missing: chrome={not chrome}, chromedriver={not driver})"
+                )
 
         logger.info(
             "Browser binaries (CHROME_BIN/CHROMEDRIVER_BIN override when set): "
@@ -477,14 +498,10 @@ class SeleniumBackend(Backend):
     #         options.add_argument("--disable-gpu"
 
     #     else:
-    #         options.binary_location = (
-    #             "/Users/shang/my_work/ig_profile_scraper/"
-    #             "chrome-mac-arm64/"
-    #             "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
-    #         )
-    #         chromedriver_path = "/opt/homebrew/bin/chromedriver"
+    #         options.binary_location = "<CHROME_BIN or bootstrap under ~/.slug/browser/...>"
+    #         chromedriver_path = "<CHROMEDRIVER_BIN or bootstrap or PATH chromedriver>"
     #         platform = "Linux x86_64"  # intentionally Linux-like
-    #         profile_dir = "/Users/shang/.ig_chrome_profile"
+    #         profile_dir = os.getenv("IGSCRAPER_CHROME_PROFILE", "/tmp/chrome-profile")
 
     #         options.add_argument("--remote-debugging-pipe")
 
