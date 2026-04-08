@@ -11,6 +11,8 @@ from igscraper.paths import (
     chromedriver_executable_path_after_extract,
     get_cached_browser_binaries,
     get_cached_config_path,
+    get_cookie_cache_dir,
+    get_latest_cookie_path,
     resolve_cft_platform,
 )
 
@@ -29,6 +31,12 @@ def test_get_cached_browser_binaries_missing(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     c, d = get_cached_browser_binaries()
     assert c is None and d is None
+
+
+def test_cookie_cache_paths_respect_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert get_cookie_cache_dir() == tmp_path / ".slug" / "cookies"
+    assert get_latest_cookie_path() == tmp_path / ".slug" / "cookies" / "latest.json"
 
 
 def test_get_cached_browser_binaries_present(monkeypatch, tmp_path):
@@ -82,6 +90,14 @@ def test_resolve_config_path_no_cached_raises(monkeypatch, tmp_path):
     with pytest.raises(SystemExit) as ei:
         cli._resolve_config_path(None)
     assert "bootstrap" in str(ei.value).lower() or "bootstrap" in str(ei.value)
+
+
+def test_resolve_path_expands_user_home(monkeypatch, tmp_path):
+    from igscraper.config import resolve_path
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    out = resolve_path("~/.slug/cookies/latest.json")
+    assert out == (tmp_path / ".slug" / "cookies" / "latest.json").resolve()
 
 
 def test_selenium_resolve_uses_cache_when_unset(monkeypatch, tmp_path):
@@ -146,3 +162,10 @@ def test_read_bundled_sample_config():
     text = read_bundled_sample_config_text()
     assert "[main]" in text
     assert "thor_worker_id" in text
+
+
+def test_cookie_filename_format():
+    from igscraper.login_Save_cookie import _build_cookie_filename
+
+    filename = _build_cookie_filename("143.0.7499.170", "user.name", 1700000000)
+    assert filename == "143.0.7499.170_user.name_1700000000.json"

@@ -64,7 +64,8 @@ post_page_data_key = [
   "xdt_api__v1__media__media_id__comments__parent_comment_id__child_comments__connection",
 ]
 profile_page_data_key = ["xdt_api__v1__feed__user_timeline_graphql_connection"]
-cookie_file = "path/to/cookies.json"
+# Generate with: Slug-Ig-Crawler save-cookie --username <instagram_username>
+cookie_file = "~/.slug/cookies/latest.json"
 
 [logging]
 level = "INFO"

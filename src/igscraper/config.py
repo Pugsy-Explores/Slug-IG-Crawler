@@ -41,7 +41,7 @@ def resolve_path(path_str: str) -> Path:
     Returns:
         An absolute Path object.
     """
-    path = Path(path_str)
+    path = Path(path_str).expanduser()
     if not path.is_absolute():
         path = PROJECT_ROOT / path
     return path.resolve()

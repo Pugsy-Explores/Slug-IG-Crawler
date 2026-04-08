@@ -1,0 +1,22 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+## [2.2.21] - 2026-04-08
+
+### Added
+- CLI command `Slug-Ig-Crawler save-cookie --username <instagram_username>` to capture Instagram login cookies without running a scrape.
+- Cookie cache helpers for `~/.slug/cookies`, including stable pointer `~/.slug/cookies/latest.json`.
+- Cookie filename format enforcement: `<browserVersion>_<username>_<timestamp>.json`.
+- Tests for cookie cache path helpers, `~` path expansion, and cookie filename formatting.
+
+### Changed
+- Refactored cookie capture logic into callable module functions used by the CLI.
+- Cookie capture binary resolution now follows existing cache/env conventions:
+  - `CHROME_BIN`/`CHROMEDRIVER_BIN`
+  - cached bootstrap pair in `~/.slug/browser/...`
+  - Selenium/system fallback
+- Sample config defaults now point `cookie_file` to `~/.slug/cookies/latest.json`.
+- README updated for `save-cookie` usage and cookie path guidance.
+- Config path resolver now expands `~` so cached cookie paths resolve correctly.
+

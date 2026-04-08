@@ -11,6 +11,7 @@ from typing import Optional, Tuple
 SLUG_CACHE_DIRNAME = ".slug"
 CACHED_CONFIG_FILENAME = "config.toml"
 BROWSER_SUBDIR = "browser"
+COOKIES_SUBDIR = "cookies"
 
 # Chrome for Testing JSON platform keys (linux64, mac-arm64, mac-x64).
 CftPlatform = str
@@ -24,6 +25,16 @@ def get_slug_cache_dir() -> Path:
 def get_cached_config_path() -> Path:
     """Default user config location: ``~/.slug/config.toml``."""
     return get_slug_cache_dir() / CACHED_CONFIG_FILENAME
+
+
+def get_cookie_cache_dir() -> Path:
+    """Default cookie cache directory: ``~/.slug/cookies``."""
+    return get_slug_cache_dir() / COOKIES_SUBDIR
+
+
+def get_latest_cookie_path() -> Path:
+    """Stable pointer to most recently captured cookie file."""
+    return get_cookie_cache_dir() / "latest.json"
 
 
 def resolve_cft_platform() -> CftPlatform:

@@ -9,6 +9,7 @@ Commands:
   run (default)     Run the pipeline; ``--config`` optional if ``~/.slug/config.toml`` exists.
   bootstrap       Download stable Chrome + ChromeDriver into ``~/.slug`` and install sample config.
   show-config     Print bundled sample TOML and whether ``~/.slug/config.toml`` exists.
+  save-cookie     Capture Instagram login cookies into ``~/.slug/cookies``.
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ if _src.name == "src" and str(_src) not in sys.path:
 
 from igscraper.bootstrap import read_bundled_sample_config_text, run_bootstrap
 from igscraper.config import get_default_cached_config_path
+from igscraper.login_Save_cookie import capture_login_cookies
 from igscraper.paths import get_cached_config_path, slug_cache_has_valid_browser_pair
 from igscraper.pipeline import Pipeline
 
@@ -103,10 +105,20 @@ def _cmd_show_config(_args: argparse.Namespace) -> None:
         print(f"  resolved: {cached.resolve()}")
 
 
+def _cmd_save_cookie(args: argparse.Namespace) -> None:
+    result = capture_login_cookies(args.username)
+    print("Cookie capture complete.")
+    print(f"  Username:        {result.username}")
+    print(f"  Browser version: {result.browser_version}")
+    print(f"  Cookie count:    {result.cookie_count}")
+    print(f"  Cookie file:     {result.cookie_path}")
+    print(f"  Latest pointer:  {result.latest_path}")
+
+
 def main() -> None:
     argv = sys.argv[1:]
     # Subcommands when first token is a known command
-    if argv and argv[0] in ("run", "bootstrap", "show-config"):
+    if argv and argv[0] in ("run", "bootstrap", "show-config", "save-cookie"):
         cmd = argv[0]
         rest = argv[1:]
     else:
@@ -133,6 +145,17 @@ def main() -> None:
         p = argparse.ArgumentParser(prog="Slug-Ig-Crawler", description="Slug-Ig-Crawler")
         args = p.parse_args(rest)
         _cmd_show_config(args)
+        return
+
+    if cmd == "save-cookie":
+        p = argparse.ArgumentParser(prog="Slug-Ig-Crawler", description="Slug-Ig-Crawler")
+        p.add_argument(
+            "--username",
+            required=True,
+            help="Instagram username for naming the saved cookie file.",
+        )
+        args = p.parse_args(rest)
+        _cmd_save_cookie(args)
         return
 
     # run

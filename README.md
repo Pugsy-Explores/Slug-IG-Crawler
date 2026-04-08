@@ -136,7 +136,7 @@ After install, the **`Slug-Ig-Crawler`** console script is on your `PATH` (legac
 | 1 | Create and activate a virtualenv: `python3 -m venv .venv && source .venv/bin/activate` (Windows: `.venv\Scripts\activate`). |
 | 2 | Install from PyPI: `pip install "slug-ig-crawler[all]"`. Then run **`Slug-Ig-Crawler bootstrap`** to cache stable Chrome + ChromeDriver and seed `~/.slug/config.toml`. |
 | 3 | **Postgres (required if you use enqueue):** `psql "$YOUR_DATABASE_URL" -f scripts/postgres_setup.sql`. Set `PUGSY_PG_HOST`, `PUGSY_PG_PORT`, `PUGSY_PG_USER`, `PUGSY_PG_PASSWORD`, `PUGSY_PG_DATABASE` in `.env` or your shell. |
-| 4 | Edit `~/.slug/config.toml` (or pass `--config /path/to/config.toml`). Set **`[data].cookie_file`**, **`[trace].thor_worker_id`** (any non-empty string, e.g. `local-dev`). Set **`push_to_gcs`** to `0` for a local-only trial without GCP. |
+| 4 | Run `Slug-Ig-Crawler save-cookie --username <instagram_username>` once, then set **`[data].cookie_file`** in `~/.slug/config.toml` (recommended: `~/.slug/cookies/latest.json`) and set **`[trace].thor_worker_id`** (any non-empty string, e.g. `local-dev`). Set **`push_to_gcs`** to `0` for a local-only trial without GCP. |
 | 5 | **Profile mode:** keep `[main].target_profiles` populated and ensure **`[data].urls_filepath`** is missing or points to a file that does **not** exist. **URL mode:** one URL per line in a file; set **`[data].urls_filepath`** to that real path. |
 | 6 | **Docker vs local:** `[main].use_docker = true` for Docker/Compose flows; `false` with `headless = false` for a visible local browser. See [Docker and Docker Compose](#docker-and-docker-compose). |
 | 7 | Run: `Slug-Ig-Crawler` (autoloads `~/.slug/config.toml`), or `Slug-Ig-Crawler --config /path/to/config.toml`. |
@@ -261,6 +261,7 @@ The `cli.py` module serves as the **single entry point** for the application. It
 | `run` (default) | Load config and run the pipeline. |
 | `bootstrap` | Download stable Chrome + ChromeDriver into `~/.slug/browser/…` and copy sample config to `~/.slug/config.toml` if absent (`--force` / `--force-config` available). |
 | `show-config` | Print the bundled sample TOML and whether `~/.slug/config.toml` exists. |
+| `save-cookie` | Open Instagram login flow and save JSON cookies to `~/.slug/cookies/<browserVersion>_<username>_<timestamp>.json` (also updates `~/.slug/cookies/latest.json`). |
 
 **Key behavior:**
 
@@ -272,6 +273,7 @@ The `cli.py` module serves as the **single entry point** for the application. It
 Slug-Ig-Crawler --config config.toml
 Slug-Ig-Crawler bootstrap
 Slug-Ig-Crawler show-config
+Slug-Ig-Crawler save-cookie --username your_instagram_username
 Slug-Ig-Crawler   # same as run; uses ~/.slug/config.toml when present
 ```
 
@@ -382,7 +384,7 @@ fetch_comments = true
 
 [data]
 output_dir = "outputs"
-cookie_file = "cookies.pkl"
+cookie_file = "~/.slug/cookies/latest.json"
 posts_path = "{output_dir}/{date}/{target_profile}/posts_{target_profile}_{datetime}.txt"
 metadata_path = "{output_dir}/{date}/{target_profile}/metadata_{target_profile}.jsonl"
 ```
@@ -929,7 +931,7 @@ consumer_id = "default_consumer"  # Consumer ID for video naming (automatically 
 [data]
 output_dir = "outputs"
 shot_dir = "{output_dir}/{date}/screens"  # Screenshot directory (used for video generation)
-cookie_file = "src/igscraper/cookies_1234567890.pkl"
+cookie_file = "~/.slug/cookies/latest.json"
 posts_path = "{output_dir}/{date}/{target_profile}/posts_{target_profile}_{datetime}.txt"
 metadata_path = "{output_dir}/{date}/{target_profile}/metadata_{target_profile}.jsonl"
 post_entity_path = "{output_dir}/{date}/{target_profile}/post_entity_{target_profile}_{datetime}.jsonl"
