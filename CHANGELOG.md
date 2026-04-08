@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.2.28a] - 2026-04-09
+
+### Fixed
+- **`flatten_schema.yaml`**: load from bundled package data when configured `schema_path` (e.g. `src/igscraper/...`) is missing after `pip install`.
+- **Browser binaries**: restore `~/.slug/browser` cache fallback when `CHROME_BIN` / `CHROMEDRIVER_BIN` are unset (after loading `~/.slug/.env`).
+- **Tests**: `chrome_compat` visible-mode assertion matches `--window-size=1920,1080`.
+
 ## [2.2.28] - 2026-04-09
 
 ### Notes
