@@ -2,6 +2,11 @@
 
 [![CI](https://github.com/shang-vikas/insta_profile_scraper/actions/workflows/ci.yml/badge.svg)](https://github.com/shang-vikas/insta_profile_scraper/actions/workflows/ci.yml)
 [![GitHub stars](https://img.shields.io/github/stars/shang-vikas/insta_profile_scraper?style=social)](https://github.com/shang-vikas/insta_profile_scraper/stargazers)
+[![PyPI version](https://img.shields.io/pypi/v/slug-ig-crawler.svg)](https://pypi.org/project/slug-ig-crawler/)
+[![Python versions](https://img.shields.io/pypi/pyversions/slug-ig-crawler.svg)](https://pypi.org/project/slug-ig-crawler/)
+[![License](https://img.shields.io/pypi/l/slug-ig-crawler.svg)](https://pypi.org/project/slug-ig-crawler/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/slug-ig-crawler.svg)](https://pypi.org/project/slug-ig-crawler/)
+[![Repo views](https://visitor-badge.laobi.icu/badge?page_id=shang-vikas.insta_profile_scraper)](https://github.com/shang-vikas/insta_profile_scraper)
 
 **What it is:** A Python tool that drives a real browser (Selenium) to collect **public** Instagram profile data, post metadata, comments, and media, with optional **Google Cloud Storage** uploads and **PostgreSQL** enqueue rows for downstream pipelines. Configuration is **TOML + Pydantic**; orchestration is **CLI → Pipeline → Selenium backend**.
 
