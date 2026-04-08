@@ -2,12 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
-## [2.2.28] - 2026-04-08
+## [2.2.28] - 2026-04-09
+
+### Notes
+- This release targets **mode 1** (profile scrape via `target_profiles`) and **mode 2** (post/URL list via `urls_filepath`), and both **headed** and **headless** Chrome runs.
 
 ### Changed
 - **Default `PUGSY_PG_PORT`** is now **`5432`** (standard Postgres / Homebrew). The previous default `5433` matched Docker port-mapping setups and caused connection refused against a local server on `5432`. Set `PUGSY_PG_PORT=5433` in env or `~/.slug/.env` if your database only listens on a mapped port.
 - **Default `PUGSY_PG_USER` on macOS** is now the **current login** when unset (Homebrew Postgres usually has no `postgres` role). Linux/Docker-style installs still default to `postgres`. `PostgresConfig.from_env` uses the same rule.
 - **`bootstrap`**: clearer hints when Postgres is not running (`Connection refused`) or when the `postgres` role is missing.
+
+### Testing
+- Changes around **calling Postgres**, **`bootstrap` schema setup**, and **minimal enqueue / config integration** are partly covered by unit tests; **full integration against a live database and real scrape jobs should be exercised manually** before production reliance.
+
+### Future release
+- **Docker** support (image, compose, and documented workflows) is **planned**; it is not included in v2.2.28.
 
 ## [2.2.27] - 2026-04-08
 
