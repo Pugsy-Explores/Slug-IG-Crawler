@@ -2,21 +2,41 @@
 
 ## Table of Contents
 
-1. [Open source, research use, and acceptable use](#open-source-research-use-and-acceptable-use)
-2. [Architecture Overview](#architecture-overview)
-3. [Entry Point: CLI](#entry-point-cli)
-4. [VS Code debugging (`launch.json`)](#vs-code-debugging-launchjson)
-5. [Core Components](#core-components)
-6. [End-to-End Workflow](#end-to-end-workflow)
-7. [Execution Flow](#execution-flow)
-8. [Sequence Diagram](#sequence-diagram)
-9. [Configuration](#configuration)
-10. [External services and infrastructure](#external-services-and-infrastructure)
-11. [Data Models and Parsing](#data-models-and-parsing)
-12. [Authentication](#authentication)
-13. [Docker and Docker Compose](#docker-and-docker-compose)
-14. [Data Persistence](#data-persistence)
-15. [Performance Timing & Observability](#performance-timing--observability)
+1. [Quickstart: setup and run (~5 minutes)](#quickstart-setup-and-run-5-minutes)
+2. [Open source, research use, and acceptable use](#open-source-research-use-and-acceptable-use)
+3. [Architecture Overview](#architecture-overview)
+4. [Entry Point: CLI](#entry-point-cli)
+5. [VS Code debugging (`launch.json`)](#vs-code-debugging-launchjson)
+6. [Core Components](#core-components)
+7. [End-to-End Workflow](#end-to-end-workflow)
+8. [Execution Flow](#execution-flow)
+9. [Sequence Diagram](#sequence-diagram)
+10. [Configuration](#configuration)
+11. [External services and infrastructure](#external-services-and-infrastructure)
+12. [Data Models and Parsing](#data-models-and-parsing)
+13. [Authentication](#authentication)
+14. [Docker and Docker Compose](#docker-and-docker-compose)
+15. [Data Persistence](#data-persistence)
+16. [Performance Timing & Observability](#performance-timing--observability)
+
+---
+
+## Quickstart: setup and run (~5 minutes)
+
+**Goal:** install dependencies, create Postgres tables, configure TOML, run `python -m igscraper.cli` once.
+
+| Step | Action |
+|------|--------|
+| 1 | `cd` to repo root. `python3 -m venv .venv && source .venv/bin/activate` (Windows: `.venv\Scripts\activate`). |
+| 2 | `pip install -r requirements.txt`. Export `PYTHONPATH=src` or always run as `python -m igscraper.cli` from the repo root (the CLI adds `src/` for you). |
+| 3 | **Postgres (mandatory for enqueue):** create tables with `scripts/postgres_setup.sql` — `psql "$YOUR_DATABASE_URL" -f scripts/postgres_setup.sql`. Set `PUGSY_PG_HOST`, `PUGSY_PG_PORT`, `PUGSY_PG_USER`, `PUGSY_PG_PASSWORD`, `PUGSY_PG_DATABASE` in `.env` (or the environment). The app reads these in `enqueue_client.py`. |
+| 4 | `cp config.example.toml config.toml`. Set **`[data].cookie_file`** to your saved session cookie path, **`[trace].thor_worker_id`** to any non-empty string (e.g. `local-dev`), and **`[main].gcs_bucket_name`** if you use GCS. |
+| 5 | **`[main].push_to_gcs`:** `1` = upload JSONL to GCS and store `gs://...` in `crawled_*` tables (needs GCP credentials, e.g. `GOOGLE_APPLICATION_CREDENTIALS`). `0` = no GCS upload; Postgres `file_path` stores the **absolute local path** to the JSONL (and screenshot finalization skips GCS upload and keeps local video/screenshots). |
+| 6 | **Profile mode (scrape by handle):** non-empty `[main].target_profiles` and either omit `[data].urls_filepath` or point it at a path that **does not exist** so mode 1 wins. **URL list mode:** put one URL per line in a file and set `[data].urls_filepath` to that file’s path (file must exist on disk). |
+| 7 | **Docker browser (`[main].use_docker = true`):** use the project’s Docker/Compose flow (see [Docker and Docker Compose](#docker-and-docker-compose)); set `CHROME_BIN` / `CHROMEDRIVER_BIN` as in the image. **Local live browser (`use_docker = false`):** set `headless = false` to see the window; optional `chrome_binary_path` / `chromedriver_binary_path` in `[main]` if not using env vars. |
+| 8 | Run: `python -m igscraper.cli --config config.toml`. |
+
+**Debug in the IDE:** see [VS Code debugging (`launch.json`)](#vs-code-debugging-launchjson). For **debugpy**: start configuration **igscraper: CLI (listen for debugger)**, then **igscraper: Attach to debugpy** so execution continues past `debugpy.wait_for_client()`.
 
 ---
 
@@ -195,7 +215,7 @@ The configuration layer loads, validates, and processes settings from TOML files
 **Key Classes:**
 
 - **`Config`**: Main configuration container that aggregates:
-  - `MainConfig`: Scraping behavior settings (mode, batch size, retries, etc.)
+  - `MainConfig`: Scraping behavior settings (mode, batch size, retries, `push_to_gcs`, `gcs_bucket_name`, etc.)
   - `DataConfig`: File paths and data storage settings
   - `LoggingConfig`: Logging configuration
   - `TraceConfig`: `thor_worker_id` and related trace fields

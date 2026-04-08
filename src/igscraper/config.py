@@ -1,5 +1,5 @@
 import toml
-from pydantic import Field, ValidationError, BaseModel
+from pydantic import Field, ValidationError, BaseModel, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional, Callable, Any, List
 from igscraper.logger import configure_root_logger, get_logger
@@ -88,7 +88,15 @@ class MainConfig(BaseSettings):
     fetch_comments: bool = True
 
     gcs_bucket_name: str = "crawled_data"
+    # 1 = upload JSONL to GCS and insert gs://... into Postgres; 0 = skip GCS, insert absolute local path.
+    push_to_gcs: int = Field(1, description="Must be 0 or 1.")
 
+    @field_validator("push_to_gcs")
+    @classmethod
+    def _push_to_gcs_binary(cls, v: int) -> int:
+        if v not in (0, 1):
+            raise ValueError("push_to_gcs must be 0 or 1")
+        return v
 
     # Credentials can be loaded from env vars (e.g., IGSCRAPER_USERNAME)
     # The alias allows the TOML file to use 'instagram_username'.

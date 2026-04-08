@@ -63,6 +63,9 @@ class FileEnqueuer:
     - kind="post"   -> inserts into crawled_posts
     - kind="comment"-> inserts into crawled_comments
 
+    `file_path` is either a `gs://...` URI (when uploads use GCS) or an absolute
+    local path (when `[main].push_to_gcs` is 0).
+
     Schema assumed (includes thor_worker_id):
 
         CREATE TABLE crawled_posts (

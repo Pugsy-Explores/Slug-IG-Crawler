@@ -34,6 +34,8 @@ comment_scroll_steps = 3
 
 scrape_using_captured_requests = true
 gcs_bucket_name = "your-gcs-bucket"
+# 1 = upload JSONL to GCS and insert gs://... into Postgres; 0 = skip GCS, insert absolute local path.
+push_to_gcs = 1
 consumer_id = "default_consumer"
 
 # When CHROME_BIN / CHROMEDRIVER_BIN are unset: local dev uses these, then built-in defaults; Docker uses image paths.

@@ -151,7 +151,11 @@ class SeleniumBackend(Backend):
         # We'll set it on enqueuer when thor_worker_id is available
         self._enqueuer = enqueuer
         gcs_cfg = GcsUploadConfig(bucket_name=self.config.main.gcs_bucket_name)
-        self.uploader = UploadAndEnqueue(gcs_cfg, enqueuer)
+        self.uploader = UploadAndEnqueue(
+            gcs_cfg,
+            enqueuer,
+            push_to_gcs=self.config.main.push_to_gcs,
+        )
         self._state_file = "rate_limit_state.json"  # persistent file
         self._load_rate_limit_state()
         self.COMMENT_MODEL_KEYS = {
@@ -739,32 +743,42 @@ class SeleniumBackend(Backend):
 
             logger.info(f"[finalize_screenshots] Video created successfully: {video_path}")
 
-            # Upload to GCS
             bucket_name = self.config.main.gcs_bucket_name
             gcs_uri = None
-            
-            if not bucket_name:
-                logger.error("[finalize_screenshots] gcs_bucket_name is not configured. Skipping upload.")
-            else:
-                logger.info(f"[finalize_screenshots] Uploading to GCS bucket: {bucket_name!r}")
-                gcs_object_name = f"vid_log/{video_name}"
-                gcs_uri = upload_video_to_gcs(
-                    local_video_path=video_path,
-                    bucket_name=bucket_name,
-                    gcs_object_name=gcs_object_name,
+            push_gcs = self.config.main.push_to_gcs
+
+            if push_gcs == 0:
+                logger.info(
+                    "[finalize_screenshots] push_to_gcs=0: keeping video local (no GCS upload): %s",
+                    video_path.resolve(),
                 )
-
-            if gcs_uri:
-                logger.info(f"[finalize_screenshots] Video uploaded to GCS: {gcs_uri}")
             else:
-                logger.error("[finalize_screenshots] GCS upload failed, but continuing with cleanup")
+                # Upload to GCS
+                if not bucket_name:
+                    logger.error("[finalize_screenshots] gcs_bucket_name is not configured. Skipping upload.")
+                else:
+                    logger.info(f"[finalize_screenshots] Uploading to GCS bucket: {bucket_name!r}")
+                    gcs_object_name = f"vid_log/{video_name}"
+                    gcs_uri = upload_video_to_gcs(
+                        local_video_path=video_path,
+                        bucket_name=bucket_name,
+                        gcs_object_name=gcs_object_name,
+                    )
 
-            # Cleanup: delete all screenshots and video file
-            # This runs even if upload failed (best-effort cleanup)
-            cleanup_local_files(
-                screenshot_dir=shot_dir,
-                video_path=video_path,
-            )
+                if gcs_uri:
+                    logger.info(f"[finalize_screenshots] Video uploaded to GCS: {gcs_uri}")
+                else:
+                    logger.error("[finalize_screenshots] GCS upload failed, but continuing with cleanup")
+
+            if push_gcs == 0:
+                logger.info("[finalize_screenshots] push_to_gcs=0: skipping local cleanup (screenshots + video kept).")
+            else:
+                # Cleanup: delete all screenshots and video file
+                # This runs even if upload failed (best-effort cleanup)
+                cleanup_local_files(
+                    screenshot_dir=shot_dir,
+                    video_path=video_path,
+                )
 
             logger.info("[finalize_screenshots] Screenshot finalization completed")
 

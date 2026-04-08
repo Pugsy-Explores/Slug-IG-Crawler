@@ -43,11 +43,22 @@ class UploadAndEnqueue:
         gcs_config: GcsUploadConfig,
         enqueuer: FileEnqueuer,
         storage_client: Optional[storage.Client] = None,
+        *,
+        push_to_gcs: int = 1,
     ) -> None:
         self._cfg = gcs_config
         self._enqueuer = enqueuer
-        self._storage_client = storage_client or storage.Client()
-        logger.debug("[upload_enqueue] Initialized with bucket: %s", self._cfg.bucket_name)
+        self._push_to_gcs = 1 if push_to_gcs else 0
+        # Avoid instantiating google.cloud.storage when only local enqueue is used (no GCP creds needed).
+        if self._push_to_gcs:
+            self._storage_client = storage_client or storage.Client()
+        else:
+            self._storage_client = storage_client
+        logger.debug(
+            "[upload_enqueue] Initialized bucket=%s push_to_gcs=%s",
+            self._cfg.bucket_name,
+            self._push_to_gcs,
+        )
 
     def upload_and_enqueue(
         self,
@@ -61,10 +72,8 @@ class UploadAndEnqueue:
     ) -> str:
         """
         1. Optionally sort the local file (writes <name>_sorted.jsonl next to it).
-        2. Derive GCS object name from the file actually uploaded.
-        3. Upload file to GCS.
-        4. Enqueue file path (gs://...).
-        5. Return the gs:// URI.
+        2. If push_to_gcs is 1: derive GCS object name, upload, enqueue gs:// URI, return gs:// URI.
+        3. If push_to_gcs is 0: skip GCS, enqueue absolute local path of the file (original or sorted), return that path.
 
         Args:
             local_path: local filename to upload
@@ -114,11 +123,18 @@ class UploadAndEnqueue:
                 logger.warning("[upload_enqueue] Proceeding with original file despite sort error: %s", local_path)
                 to_upload_path = path
 
+        resolved_local = str(to_upload_path.resolve())
+
+        if self._push_to_gcs == 0:
+            self._enqueuer.enqueue_file(kind=kind, file_path=resolved_local)
+            logger.info("[upload_enqueue] Local-only enqueue %s -> %s", str(to_upload_path), resolved_local)
+            return resolved_local
+
         # Build GCS URI for the file we will upload
-        gcs_uri, object_name = self._build_gcs_uri(str(to_upload_path))
+        gcs_uri, object_name = self._build_gcs_uri(resolved_local)
 
         # Upload
-        self._upload_to_gcs(local_path=str(to_upload_path), object_name=object_name)
+        self._upload_to_gcs(local_path=resolved_local, object_name=object_name)
 
         # Enqueue the GCS uri
         self._enqueuer.enqueue_file(kind=kind, file_path=gcs_uri)
