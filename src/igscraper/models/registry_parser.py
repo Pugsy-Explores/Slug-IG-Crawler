@@ -2,8 +2,9 @@ import re
 import json
 import copy
 import yaml
+from importlib.resources import files
 from pathlib import Path
-from typing import Dict, Any, List, Pattern, Type, Optional, Union,Tuple
+from typing import Dict, Any, List, Pattern, Type, Optional, Union, Tuple
 from pydantic import BaseModel, TypeAdapter
 from igscraper.logger import get_logger
 from igscraper.models import ENTRIES, BaseFlexibleSafeModel 
@@ -17,6 +18,18 @@ from pathlib import Path
 from typing import Any, Dict, List
 from igscraper.models import BaseFlexibleSafeModel
 logger = get_logger(__name__)
+
+
+def load_schema(schema_path: Optional[str]) -> str:
+    """
+    Load flatten schema YAML: use user path when it exists, else bundled package file.
+    Works for repo-relative dev paths and pip-installed site-packages layouts.
+    """
+    if schema_path:
+        p = Path(schema_path).expanduser()
+        if p.is_file():
+            return p.read_text(encoding="utf-8")
+    return files("igscraper").joinpath("flatten_schema.yaml").read_text(encoding="utf-8")
 
 
 class GraphQLModelRegistry:
@@ -74,8 +87,8 @@ class GraphQLModelRegistry:
                 yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
                 construct_mapping)
             return yaml.load(stream, OrderedLoader)
-        
-        raw = ordered_load(Path(path).read_text())["rules"]
+
+        raw = ordered_load(load_schema(path or None))["rules"]
         logger.debug("Loaded schema:\n%s", pprint.pformat(raw, width=120))
         return raw
 
