@@ -1,5 +1,24 @@
 # Instagram Profile Scraper - Technical Documentation
 
+## Table of Contents
+
+1. [Open source, research use, and acceptable use](#open-source-research-use-and-acceptable-use)
+2. [Architecture Overview](#architecture-overview)
+3. [Entry Point: CLI](#entry-point-cli)
+4. [Core Components](#core-components)
+5. [End-to-End Workflow](#end-to-end-workflow)
+6. [Execution Flow](#execution-flow)
+7. [Sequence Diagram](#sequence-diagram)
+8. [Configuration](#configuration)
+9. [External services and infrastructure](#external-services-and-infrastructure)
+10. [Data Models and Parsing](#data-models-and-parsing)
+11. [Authentication](#authentication)
+12. [Docker and Docker Compose](#docker-and-docker-compose)
+13. [Data Persistence](#data-persistence)
+14. [Performance Timing & Observability](#performance-timing--observability)
+
+---
+
 This repository is **open source** (see the project license in the repo root). It is shared for **transparency and research**, not as an official product or service.
 
 ## Open source, research use, and acceptable use
@@ -32,23 +51,6 @@ At `Pipeline.run()`, the effective mode is chosen **after** config load (the `[m
 
 - **This repo:** use `config.example.toml` as a starting point (copy to `config.toml` and edit). It includes a `[trace]` section required by `Pipeline`.
 - **Thor** does not read this README; it generates job configs from its own template (e.g. `thor/assets/base_config.toml`) and invokes Docker with `DOCKER_COMPOSE_FILE` pointing at **its** compose file. The **service name** `igscraper` and the usual entrypoint `python -m igscraper.cli --config /job/config.toml` should stay compatible with that flow.
-
-## Table of Contents
-
-1. [Open source, research use, and acceptable use](#open-source-research-use-and-acceptable-use)
-2. [Architecture Overview](#architecture-overview)
-3. [Entry Point: CLI](#entry-point-cli)
-4. [Core Components](#core-components)
-5. [End-to-End Workflow](#end-to-end-workflow)
-6. [Execution Flow](#execution-flow)
-7. [Sequence Diagram](#sequence-diagram)
-8. [Configuration](#configuration)
-9. [External services and infrastructure](#external-services-and-infrastructure)
-10. [Data Models and Parsing](#data-models-and-parsing)
-11. [Authentication](#authentication)
-12. [Docker and Docker Compose](#docker-and-docker-compose)
-13. [Data Persistence](#data-persistence)
-14. [Performance Timing & Observability](#performance-timing--observability)
 
 ---
 
