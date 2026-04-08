@@ -282,8 +282,40 @@ Slug-Ig-Crawler version
 Slug-Ig-Crawler   # same as run; uses ~/.slug/config.toml when present
 ```
 
-**Arguments (run):**
-- `--config` (optional): Path to the TOML configuration file; omitted when `~/.slug/config.toml` exists
+**Arguments by command:**
+
+- `run` (default)
+  - `--config <path>` (optional): TOML path; if omitted, CLI autoloads `~/.slug/config.toml` when present.
+  - Example:
+    - `Slug-Ig-Crawler --config ./config.toml`
+    - `Slug-Ig-Crawler run --config /abs/path/config.toml`
+
+- `bootstrap`
+  - `--force` (optional): re-download Chrome + ChromeDriver even if cache already exists.
+  - `--force-config` (optional): overwrite `~/.slug/config.toml` with bundled sample.
+  - Example:
+    - `Slug-Ig-Crawler bootstrap --force`
+    - `Slug-Ig-Crawler bootstrap --force-config`
+
+- `show-config`
+  - No arguments.
+  - Example:
+    - `Slug-Ig-Crawler show-config`
+
+- `save-cookie`
+  - `--username <instagram_username>` (**required**): used in cookie filename and session labeling.
+  - Example:
+    - `Slug-Ig-Crawler save-cookie --username your_instagram_username`
+
+- `list-cookies`
+  - No arguments.
+  - Example:
+    - `Slug-Ig-Crawler list-cookies`
+
+- `version`
+  - No arguments.
+  - Example:
+    - `Slug-Ig-Crawler version`
 
 This document also includes a **[VS Code debugging (`launch.json`)](#vs-code-debugging-launchjson)** section below with a ready-to-paste debugger configuration for the same entry point.
 
