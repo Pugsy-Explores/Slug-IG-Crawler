@@ -17,6 +17,7 @@
 | Topic | Where |
 |--------|--------|
 | **Quick start** | [Quick start](#quick-start) (below) |
+| **`[main]` TOML cheat sheet** | [Main TOML cheat sheet](#main-toml-cheat-sheet) |
 | Project overview | [docs/project-overview.md](docs/project-overview.md) |
 | Installation | [docs/installation.md](docs/installation.md) |
 | Architecture & components | [docs/architecture.md](docs/architecture.md) |
@@ -103,6 +104,50 @@ Slug-Ig-Crawler --config /path/to/config.toml
 **Working run:** Chrome starts, requests are captured, data flows to Postgres, no repeated login or crash loops. If something fails, check cookies and DB first, then re-run `Slug-Ig-Crawler bootstrap` if Chrome/Driver versions drift.
 
 Full flag reference and behavior: [docs/project-overview.md](docs/project-overview.md) and [docs/configuration-and-integration.md](docs/configuration-and-integration.md).
+
+---
+
+<a id="main-toml-cheat-sheet"></a>
+
+## Main TOML cheat sheet
+
+Values below live in **`[main]`** unless noted. Defaults and the full template are in **`config.example.toml`** (copy to `config.toml` or use `~/.slug/config.toml` after bootstrap).
+
+### How the run picks “mode”
+
+At **`Pipeline.run()`** the effective mode is chosen in this order; **`[main].mode` in TOML is overwritten** to match.
+
+| Priority | Condition | What runs |
+|----------|-----------|-----------|
+| 1 | `[data].urls_filepath` is set **and** that path **exists** on disk | **URL-file mode** — one Instagram post/reel URL per line; results keyed by `[main].run_name_for_url_file` (default `url_file_run`). |
+| 2 | Else `[main].target_profiles` is **non-empty** | **Profile mode** — each `{ name, num_posts }` is scraped in order. |
+| 3 | Else | Logged warning; **no scrape**. |
+
+To stay on profile mode while keeping a `urls_filepath` key in TOML, point it at a path that does **not** exist yet, or remove/comment the line.
+
+### Input and browser
+
+| Key | Definition / use |
+|-----|-------------------|
+| **`target_profiles`** | List of tables: `name` = handle (no `@`), `num_posts` = positive integer. Profile-mode workload. |
+| **`[data].urls_filepath`** | Optional. If present **and** the file exists → URL-file mode wins. Use an absolute path if your cwd varies. |
+| **`run_name_for_url_file`** | Label for this URL-file run in logs/results aggregation; must be non-empty in URL-file mode. |
+| **`headless`** | `true` = no browser window (typical servers); `false` = visible Chrome (debugging, local dev). |
+| **`use_docker`** | `true` = expect Chrome/ChromeDriver paths and flags suitable for the container image; `false` = local binaries (see `CHROME_BIN` / `CHROMEDRIVER_BIN`, optional `chrome_binary_path` / `chromedriver_binary_path`). |
+| **`chrome_binary_path`**, **`chromedriver_binary_path`** | Used when env `CHROME_BIN` / `CHROMEDRIVER_BIN` are unset and `use_docker` is `false` (then OS defaults may apply). |
+
+### Artifacts, comments, and capture
+
+| Key | Definition / use |
+|-----|-------------------|
+| **`push_to_gcs`** | `1` — upload JSONL to GCS and enqueue `gs://…` in Postgres; `0` — no GCS upload, enqueue **absolute local paths**. Also affects screenshot-video upload when enabled. |
+| **`gcs_bucket_name`** | Bucket for uploads when `push_to_gcs = 1` and upload paths run. |
+| **`scrape_using_captured_requests`** | Prefer GraphQL/network-log capture for comments (and related paths) vs heavier DOM-only flows where applicable. |
+| **`fetch_comments`**, **`fetch_replies`**, **`max_comments`** | Whether to collect comments/replies and how deep to go (see template for defaults). |
+| **`batch_size`**, **`save_every`**, **`rate_limit_seconds_min`**, **`rate_limit_seconds_max`** | Posts per batch, flush frequency, and random sleep bounds between batches. |
+| **`enable_screenshots`** | Periodic WebP captures → MP4 on shutdown; upload/cleanup tied to `push_to_gcs`. |
+
+For **`[data]`** paths (outputs, cookies, GraphQL keys), placeholders like `{output_dir}`, `{date}`, `{target_profile}`, `{datetime}`, and **`[trace].thor_worker_id`** (required for `Pipeline`), see [docs/configuration-and-integration.md](docs/configuration-and-integration.md).
 
 ---
 
