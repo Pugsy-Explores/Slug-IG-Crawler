@@ -25,3 +25,31 @@ src/*.egg-info/
 .coverage
 coverage.xml
 htmlcov/
+
+
+# Local dev environment
+.DS_Store
+.venv/
+.venv-pack/
+.vscode/
+
+# Local runtime/output artifacts
+audit-output-igscraper/
+data/
+logs/
+secrets/
+rate_limit_state.json
+shot_*.webp
+
+# Local browser binaries and archives
+chrome-mac-arm64/
+chrome-mac-arm64.zip
+chromedriver-mac-arm64/
+chromedriver-mac-arm64.zip
+
+# Local ad-hoc backups/config
+docker-compose.yml.bak
+docker-compose.yml.bak2
+docker-compose.yml.bak3
+scripts/headless_greenlight_config.toml
+/__init__.py
