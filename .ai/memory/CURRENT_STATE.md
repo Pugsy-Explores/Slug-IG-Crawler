@@ -1,7 +1,7 @@
 # CURRENT_STATE
 
 **Branch / release:** `main` (post-merge stabilization)  
-**Last touched:** 2026-04-25
+**Last touched:** 2026-04-25 22:07 IST
 
 ## Active priorities (max 3)
 
@@ -27,3 +27,12 @@
 
 - Runtime behavior still depends on external IG/session stability and valid cookies.
 - Validation runs may skip GCS upload via Thor-scoped config guard; keep this explicitly marked as validation-path only.
+
+## Day-end snapshot
+- **Status / completed today:**
+- Synced post-merge docs/memory state on main.
+- Re-ran IG workflow-check test bundle for parser/trace contracts.
+- Added local artifact ignores to keep working tree focused.
+- **Next:** Monitor first post-merge workflow-check cycle and rerun on any parser/trace drift signal.
+- **Blockers:** None
+- **Resume:** src/igscraper/tests/test_thor_worker_id.py; python3 -m pytest src/igscraper/tests/test_load_schema.py src/igscraper/tests/test_flatten_schema_contract.py src/igscraper/tests/test_parser_golden_contract.py src/igscraper/tests/test_thor_worker_id.py -q
