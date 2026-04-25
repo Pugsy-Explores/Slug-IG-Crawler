@@ -26,6 +26,7 @@
 | PyPI releases | [docs/PYPI_RELEASE.md](docs/PYPI_RELEASE.md) |
 | Changelog | [CHANGELOG.md](CHANGELOG.md) |
 | All docs | [docs/index.md](docs/index.md) |
+| **IG Scraper OS** (AI / Cursor) | [.ai/BOOT_CONTEXT.md](.ai/BOOT_CONTEXT.md) → [.ai/commands/](.ai/commands/) (`ig-*`) |
 
 ---
 
@@ -150,6 +151,13 @@ To stay on profile mode while keeping a `urls_filepath` key in TOML, point it at
 For **`[data]`** paths (outputs, cookies, GraphQL keys), placeholders like `{output_dir}`, `{date}`, `{target_profile}`, `{datetime}`, and **`[trace].thor_worker_id`** (required for `Pipeline`), see [docs/configuration-and-integration.md](docs/configuration-and-integration.md).
 
 ---
+
+## IG Scraper engineering OS (AI / Cursor)
+
+Lean runbooks and memory live under **`.ai/`** — start at [`.ai/BOOT_CONTEXT.md`](.ai/BOOT_CONTEXT.md), then [`.ai/memory/HANDOFF.md`](.ai/memory/HANDOFF.md) and [`.ai/memory/CURRENT_STATE.md`](.ai/memory/CURRENT_STATE.md).
+
+- **Commands:** [`.ai/commands/`](.ai/commands/) — use the `ig-*` macros (e.g. `ig-session-debug`, `ig-compatibility-check`, `ig-workflow-check`).
+- **Contracts:** [`docs/contracts/`](docs/contracts/) — index [`README.md`](docs/contracts/README.md); shared vocabulary [`shared-vocabulary.md`](docs/contracts/shared-vocabulary.md); scrape run, Thor handshake, parser output.
 
 ## Acceptable use and conflicts
 

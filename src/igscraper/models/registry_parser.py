@@ -1011,14 +1011,25 @@ class GraphQLModelRegistry:
     def flatten_response(self, response_json: Dict[str, Any], debug: bool = False):
         """
         Normalizes and flattens any GraphQL response into table-like rows.
-        Automatically starts from the 'data' node if present.
-        """
-        if isinstance(response_json, dict) and "data" in response_json:
-            target = response_json["data"]
-        else:
-            target = response_json
 
-        return self.apply_nested_schema(target, self.flatten_schema, debug=debug)
+        Bundled ``flatten_schema.yaml`` rules are keyed under ``data`` / ``extensions``
+        at the top level, matching the GraphQL envelope. This method strips the
+        GraphQL ``data`` (and optional ``extensions``) field when present, then
+        re-wraps so :meth:`apply_nested_schema` sees the same shape as ``rules``.
+        """
+        wrapped: Dict[str, Any]
+        if isinstance(response_json, dict):
+            if "data" in response_json:
+                inner = response_json["data"]
+                wrapped = {"data": inner if isinstance(inner, dict) else {}}
+                if "extensions" in response_json:
+                    wrapped["extensions"] = response_json["extensions"]
+            else:
+                wrapped = {"data": response_json}
+        else:
+            wrapped = {"data": {}}
+
+        return self.apply_nested_schema(wrapped, self.flatten_schema, debug=debug)
 
 
     def flatten_selected_top_level(

@@ -35,7 +35,7 @@ Then skim only relevant docs:
 
 ## Output
 
-Produce one paste-ready brief (max ~900 words) with:
+Produce one paste-ready brief (max ~1200 words) with:
 
 ### Project
 What IG Scraper is today.

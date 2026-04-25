@@ -1,5 +1,6 @@
 from selenium import webdriver
 from urllib.parse import urlparse
+import os
 import time
 import threading
 
@@ -48,7 +49,11 @@ def is_allowed_instagram_url(url: str) -> bool:
 def _check_page(url):
     if not is_allowed_instagram_url(url):
         print(f"⚠️ Suspicious navigation: {url}")
-        input("Press Enter to continue after checking...")
+        interactive = (os.getenv("IGSCRAPER_INTERACTIVE_GUARD", "").strip() == "1")
+        if interactive:
+            input("Press Enter to continue after checking...")
+        else:
+            print("⚠️ Continuing automatically (set IGSCRAPER_INTERACTIVE_GUARD=1 for prompt)")
 
 # ---------------------------
 # Patch WebDriver.get

@@ -197,8 +197,8 @@ class TestTraceConfigValidation(unittest.TestCase):
         config = load_config(str(self.config_path))
         self.assertEqual(config.trace.thor_worker_id, "not-validated-yet")
     
-    def test_config_missing_thor_worker_id_fails(self):
-        """Empty [trace] cannot satisfy TraceConfig (thor_worker_id required)."""
+    def test_config_empty_trace_section_uses_env_fallback(self):
+        """Empty [trace] can be satisfied by THOR_WORKER_ID env fallback at load time."""
         config_data = {
             "main": {
                 "target_profiles": [{"name": "testuser", "num_posts": 10}],
@@ -231,8 +231,9 @@ class TestTraceConfigValidation(unittest.TestCase):
         }
         self._create_config_file(config_data)
 
-        with self.assertRaises(ValidationError):
-            load_config(str(self.config_path))
+        with patch.dict(os.environ, {"THOR_WORKER_ID": "worker-from-env-123"}, clear=False):
+            config = load_config(str(self.config_path))
+        self.assertEqual(config.trace.thor_worker_id, "worker-from-env-123")
     
     def test_config_empty_thor_worker_id_fails(self):
         """Empty or whitespace-only thor_worker_id: load_config may succeed; Pipeline rejects."""
@@ -511,16 +512,75 @@ class TestLoggingThorWorkerId(unittest.TestCase):
             error_type=None
         )
         
-        # Verify logger.info was called
-        mock_logger.info.assert_called()
-        
-        # Get the log entry (last call, first arg)
-        log_call = mock_logger.info.call_args[0][0]
+        # Verify logger.info was called (kv line + JSON line)
+        self.assertGreaterEqual(len(mock_logger.info.call_args_list), 2)
+        log_call = mock_logger.info.call_args_list[-1][0][0]
         log_data = json.loads(log_call)
         
         # Verify thor_worker_id is present
         self.assertIn("thor_worker_id", log_data)
         self.assertEqual(log_data["thor_worker_id"], "worker-log-999")
+        self.assertIn("envelope", log_data)
+        self.assertEqual(log_data["envelope"]["status"], "success")
+        self.assertEqual(log_data["envelope"]["trace_id"], "worker-log-999")
+        self.assertEqual(log_data["envelope"]["thor_worker_id"], "worker-log-999")
+        self.assertEqual(log_data["envelope"]["version"], "igscraper-log-v1")
+
+    @patch('igscraper.pipeline.SeleniumBackend')
+    @patch('igscraper.pipeline.GraphQLModelRegistry')
+    @patch('igscraper.pipeline.logger')
+    def test_timing_log_envelope_prefers_workflow_trace_id(self, mock_logger, mock_registry, mock_backend_class):
+        """When [trace].trace_id is set, envelope.trace_id follows it; thor_worker_id stays local."""
+        from igscraper.pipeline import Pipeline
+
+        cfg = {
+            "main": {"target_profiles": [{"name": "testuser", "num_posts": 10}]},
+            "data": {
+                "output_dir": "outputs",
+                "shot_dir": "shots",
+                "posts_path": "posts.txt",
+                "metadata_path": "metadata.jsonl",
+                "skipped_path": "skipped.txt",
+                "tmp_path": "tmp.jsonl",
+                "cookie_file": "cookie.json",
+                "media_path": "media",
+                "schema_path": "schema.yaml",
+                "models_path": "models.jsonl",
+                "extracted_data_path": "extracted.jsonl",
+                "graphql_keys_path": "keys.jsonl",
+                "profile_page_data_key": ["key1"],
+                "post_page_data_key": ["key2"],
+                "post_entity_path": "post_entity.jsonl",
+                "profile_path": "profile.jsonl",
+            },
+            "logging": {
+                "level": "INFO",
+                "log_dir": "logs",
+                "log_format": "%(message)s",
+                "date_format": "%Y-%m-%d",
+            },
+            "trace": {"thor_worker_id": "worker-wf-1", "trace_id": "pugsy-wf-uuid-99"},
+        }
+        with open(self.config_path, "w") as f:
+            toml.dump(cfg, f)
+
+        mock_backend_class.return_value = MagicMock()
+        mock_registry.return_value = MagicMock()
+        pipeline = Pipeline(str(self.config_path))
+        pipeline._emit_timing_log(
+            event="pipeline_total_time",
+            category="creator_profile",
+            creator_handle="testuser",
+            content_id=None,
+            duration_ms=500,
+            status="success",
+            error_type=None,
+        )
+        log_call = mock_logger.info.call_args_list[-1][0][0]
+        log_data = json.loads(log_call)
+        self.assertEqual(log_data["envelope"]["trace_id"], "pugsy-wf-uuid-99")
+        self.assertEqual(log_data["envelope"]["thor_worker_id"], "worker-wf-1")
+        self.assertEqual(log_data["thor_worker_id"], "worker-wf-1")
 
 
 if __name__ == '__main__':

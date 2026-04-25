@@ -159,7 +159,7 @@ def _maybe_warn_browser_cache() -> None:
     )
 
 
-def _cmd_run(args: argparse.Namespace) -> None:
+def _cmd_run(args: argparse.Namespace) -> int:
     def _apply_cached_pg_env_defaults() -> None:
         """
         Apply PUGSY_* vars from ~/.slug/.env as authoritative runtime defaults.
@@ -227,9 +227,10 @@ def _cmd_run(args: argparse.Namespace) -> None:
     from igscraper.pipeline import Pipeline
     pipeline = Pipeline(config_path=config_path)
     pipeline.run()
+    return 0
 
 
-def _cmd_bootstrap(args: argparse.Namespace) -> None:
+def _cmd_bootstrap(args: argparse.Namespace) -> int:
     _print_browser_binary_paths_first()
     print("Starting bootstrap...")
     print(f"  Cache root: {get_slug_cache_dir()}")
@@ -263,9 +264,10 @@ def _cmd_bootstrap(args: argparse.Namespace) -> None:
         print(f"  Postgres setup: {status}")
         if res.postgres_message:
             print(f"  Postgres details: {res.postgres_message}")
+    return 0
 
 
-def _cmd_show_config(_args: argparse.Namespace) -> None:
+def _cmd_show_config(_args: argparse.Namespace) -> int:
     _print_browser_binary_paths_first()
     cached = get_cached_config_path()
     print("=== Bundled sample config (config.example.toml) ===\n")
@@ -285,6 +287,7 @@ def _cmd_show_config(_args: argparse.Namespace) -> None:
     print(f"\n  cached cookie files ({len(cookie_files)}):")
     for p in cookie_files:
         print(f"    - {p}")
+    return 0
 
 
 def _list_cache_config_paths() -> list[Path]:
@@ -309,7 +312,7 @@ def _list_cookie_paths() -> list[Path]:
     )
 
 
-def _cmd_save_cookie(args: argparse.Namespace) -> None:
+def _cmd_save_cookie(args: argparse.Namespace) -> int:
     def _update_cached_config_cookie_file_abs(latest_cookie_path: Path) -> None:
         cfg = get_cached_config_path()
         if not cfg.is_file():
@@ -335,15 +338,18 @@ def _cmd_save_cookie(args: argparse.Namespace) -> None:
     print(f"  Cookie count:    {result.cookie_count}")
     print(f"  Cookie file:     {result.cookie_path}")
     print(f"  Latest pointer:  {result.latest_path}")
+    return 0
 
 
-def _cmd_list_cookies(_args: argparse.Namespace) -> None:
+def _cmd_list_cookies(_args: argparse.Namespace) -> int:
     for p in _list_cookie_paths():
         print(str(p))
+    return 0
 
 
-def _cmd_version(_args: argparse.Namespace) -> None:
+def _cmd_version(_args: argparse.Namespace) -> int:
     print(__version__)
+    return 0
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -427,18 +433,18 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def main() -> None:
+def main() -> int:
     argv = sys.argv[1:]
     parser = _build_parser()
     known_cmds = ("run", "bootstrap", "show-config", "save-cookie", "list-cookies", "version")
 
     if not argv:
         parser.print_help()
-        return
+        return 0
 
     if argv[0] in ("-h", "--help"):
         parser.print_help()
-        return
+        return 0
 
     # Backward compatibility: `Slug-Ig-Crawler --config ...` means `run --config ...`
     if argv[0].startswith("-"):
@@ -453,19 +459,26 @@ def main() -> None:
         )
 
     args = parser.parse_args(argv)
-    if args.command == "run":
-        _cmd_run(args)
-    elif args.command == "bootstrap":
-        _cmd_bootstrap(args)
-    elif args.command == "show-config":
-        _cmd_show_config(args)
-    elif args.command == "save-cookie":
-        _cmd_save_cookie(args)
-    elif args.command == "list-cookies":
-        _cmd_list_cookies(args)
-    elif args.command == "version":
-        _cmd_version(args)
+    try:
+        if args.command == "run":
+            return _cmd_run(args)
+        if args.command == "bootstrap":
+            return _cmd_bootstrap(args)
+        if args.command == "show-config":
+            return _cmd_show_config(args)
+        if args.command == "save-cookie":
+            return _cmd_save_cookie(args)
+        if args.command == "list-cookies":
+            return _cmd_list_cookies(args)
+        if args.command == "version":
+            return _cmd_version(args)
+        return 2
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(f"Unexpected error: {e}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
