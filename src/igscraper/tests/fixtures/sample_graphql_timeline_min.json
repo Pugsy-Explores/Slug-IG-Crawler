@@ -1,0 +1,24 @@
+{
+  "data": {
+    "xdt_api__v1__feed__user_timeline_graphql_connection": {
+      "edges": [
+        {
+          "node": {
+            "id": "1",
+            "pk": "1",
+            "code": "ABC123",
+            "taken_at": 1700000000,
+            "comment_count": 0,
+            "like_count": 3,
+            "view_count": 0,
+            "comments_disabled": false,
+            "like_and_view_counts_disabled": false,
+            "product_type": "feed",
+            "media_type": 1,
+            "carousel_media_count": 0
+          }
+        }
+      ]
+    }
+  }
+}

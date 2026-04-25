@@ -1,0 +1,24 @@
+{
+  "data": {
+    "xdt_api__v1__media__media_id__comments__connection": {
+      "edges": [
+        {
+          "node": {
+            "pk": "c1",
+            "child_comment_count": 0,
+            "text": "fixture comment",
+            "created_at": 1700000001,
+            "parent_comment_id": null,
+            "comment_like_count": 1,
+            "has_translation": false,
+            "user": {
+              "id": "u1",
+              "username": "fixture_user",
+              "profile_pic_url": "https://example.com/p.jpg"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

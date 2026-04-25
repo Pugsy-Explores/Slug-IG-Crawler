@@ -175,6 +175,8 @@ class LoggingConfig(BaseSettings):
 class TraceConfig(BaseSettings):
     """Configuration for trace/tracking information."""
     thor_worker_id: str  # Required, non-empty
+    # Optional cross-repo workflow id (Thor job_params / PUGSY); env fallbacks in Pipeline
+    trace_id: Optional[str] = None
 
 class Config(BaseSettings):
     """

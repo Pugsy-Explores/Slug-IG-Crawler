@@ -45,6 +45,8 @@ from igscraper.chrome_compat import (
 )
 from igscraper.paths import get_cached_browser_binaries
 from igscraper.pg_env import load_dotenv_for_app
+from igscraper.trace_kv import format_trace_kv
+from igscraper.vocab_envelope import build_timing_log_envelope
 from igscraper.utils import (
     HumanScroller,
     click_all_reply_buttons_gently,
@@ -145,6 +147,7 @@ class SeleniumBackend(Backend):
         self.scroller = None
         # thor_worker_id will be set by Pipeline after initialization
         self.thor_worker_id: str | None = None
+        self.workflow_trace_id: str | None = None
         pg_cfg = PostgresConfig.from_env()
         logger.debug(f"Postgres config: {pg_cfg}")
         enqueuer = FileEnqueuer(pg_cfg)
@@ -1337,6 +1340,23 @@ class SeleniumBackend(Backend):
             error_type: Exception class name or None
         """
         consumer_id = getattr(self.config.main, 'consumer_id', None)
+        twid = self.thor_worker_id or "unknown-worker"
+        env = build_timing_log_envelope(
+            thor_worker_id=twid,
+            workflow_trace_id=getattr(self, "workflow_trace_id", None),
+            timing_status=status,
+            error_type=error_type,
+        )
+        wid = twid
+        logger.info(
+            "igscraper_timing "
+            + format_trace_kv(
+                trace_id=env.get("trace_id"),
+                worker_id=wid or None,
+                status=env.get("status"),
+                error_code=env.get("error_code"),
+            )
+        )
         log_entry = {
             "event": event,
             "category": category,
@@ -1347,7 +1367,8 @@ class SeleniumBackend(Backend):
             "status": status,
             "error_type": error_type,
             "consumer_id": consumer_id,
-            "thor_worker_id": self.thor_worker_id
+            "thor_worker_id": twid,
+            "envelope": env,
         }
         logger.info(json.dumps(log_entry, ensure_ascii=False))
 

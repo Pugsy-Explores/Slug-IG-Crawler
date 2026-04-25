@@ -5,7 +5,7 @@ This module orchestrates the entire scraping process, from loading the configura
 to initializing the backend, collecting post URLs, and scraping them in batches.
 """
 import datetime
-import os,sys
+import os
 import copy
 import random
 import traceback
@@ -20,6 +20,8 @@ from pathlib import Path
 from .models.registry_parser import GraphQLModelRegistry
 from .models.common import MODEL_REGISTRY
 from .utils import capture_instagram_requests, extract_instagram_shortcode
+from .trace_kv import format_trace_kv
+from .vocab_envelope import build_timing_log_envelope
 import pdb 
 logger = get_logger(__name__)
 
@@ -66,11 +68,18 @@ class Pipeline:
         
         # Store thor_worker_id from config once at initialization
         self.thor_worker_id = self.master_config.trace.thor_worker_id
+
+        raw_wf = getattr(self.master_config.trace, "trace_id", None)
+        wf = (raw_wf or "").strip() if raw_wf is not None else ""
+        if not wf:
+            wf = os.environ.get("PUGSY_TRACE_ID", "").strip() or os.environ.get("TRACE_ID", "").strip()
+        self.workflow_trace_id = wf or None
         
         self.backend = SeleniumBackend(self.master_config)
         
         # Make thor_worker_id available on backend for SQL inserts and logging
         self.backend.thor_worker_id = self.thor_worker_id
+        self.backend.workflow_trace_id = self.workflow_trace_id
         # Also set on FileEnqueuer for SQL inserts
         self.backend._enqueuer.thor_worker_id = self.thor_worker_id
         
@@ -100,6 +109,7 @@ class Pipeline:
         active_time_accumulated = 0.0
         error_type = None
         status = "success"
+        caught_exc: Exception | None = None
 
         try:
             # Create a profile-specific config by copying the base and updating it
@@ -173,6 +183,7 @@ class Pipeline:
             error_type = type(e).__name__
             logger.critical(f"Pipeline for profile '{profile_name}' failed with an error: {e}")
             logger.debug(traceback.format_exc())
+            caught_exc = e
             # Accumulate any remaining active time
             active_time_end = time.perf_counter()
             active_time_accumulated += (active_time_end - active_time_start)
@@ -190,6 +201,9 @@ class Pipeline:
             self._emit_timing_log("pipeline_total_time", "creator_profile", profile_name, None, total_time_ms, status, error_type)
             self._emit_timing_log("pipeline_active_time", "creator_profile", profile_name, None, active_time_ms, status, error_type)
         
+        if caught_exc is not None:
+            raise caught_exc
+
         return results
 
     def _scrape_from_url_file(self) -> dict:
@@ -304,13 +318,13 @@ class Pipeline:
                     f"[Mode 2] URL metadata overrides: {len(url_metadata)} URL(s) with custom settings"
                 )
             logger.debug(f"[Mode 2] URL file contents:\n" + "\n".join(f"  - {url}" for url in post_urls))
-        except FileNotFoundError:
+        except FileNotFoundError as e:
             logger.error(f"URL file not found at: {urls_filepath}")
-            return {}
+            raise RuntimeError(f"URL file not found: {urls_filepath}") from e
         except Exception as e:
             logger.error(f"Error reading URL file: {e}")
             logger.debug(traceback.format_exc())
-            return {}
+            raise RuntimeError(f"Failed reading URL file: {urls_filepath}") from e
 
         if not post_urls:
             return {"scraped_posts": [], "skipped_posts": []}
@@ -351,8 +365,14 @@ class Pipeline:
             attach_debugger_if_needed()
             self.master_config._driver = self.backend.driver
             logger.debug(f"Master config: {self.master_config}")
-            # Startup log with thor_worker_id
-            logger.info(f"igscraper start | thor_worker_id={self.thor_worker_id}")
+            logger.info(
+                "igscraper_start "
+                + format_trace_kv(
+                    trace_id=self.workflow_trace_id,
+                    worker_id=self.thor_worker_id,
+                    status="starting",
+                )
+            )
             # Check which mode to run in
             if self.master_config.data.urls_filepath and os.path.exists(self.master_config.data.urls_filepath):
                 # Mode 2: Scrape from a URL file
@@ -371,16 +391,12 @@ class Pipeline:
         except Exception as e:
             logger.critical(f"A critical error occurred during pipeline setup or teardown: {e}")
             logger.debug(traceback.format_exc())
+            raise
         finally:
-            import threading
-            print("THREADS AT EXIT:")
-            for t in threading.enumerate():
-                print(t.name, "daemon=", t.daemon)
             # Stop the backend once after all profiles are processed
             if self.backend:
                 self.backend.stop()
                 logger.info("Browser has been closed.")
-            os._exit(0)
 
         return self.all_results
 
@@ -398,6 +414,21 @@ class Pipeline:
             error_type: Exception class name or None
         """
         consumer_id = getattr(self.config.main, 'consumer_id', None) if self.config else None
+        env = build_timing_log_envelope(
+            thor_worker_id=self.thor_worker_id,
+            workflow_trace_id=self.workflow_trace_id,
+            timing_status=status,
+            error_type=error_type,
+        )
+        logger.info(
+            "igscraper_timing "
+            + format_trace_kv(
+                trace_id=env.get("trace_id"),
+                worker_id=self.thor_worker_id,
+                status=env.get("status"),
+                error_code=env.get("error_code"),
+            )
+        )
         log_entry = {
             "event": event,
             "category": category,
@@ -408,7 +439,8 @@ class Pipeline:
             "status": status,
             "error_type": error_type,
             "consumer_id": consumer_id,
-            "thor_worker_id": self.thor_worker_id
+            "thor_worker_id": self.thor_worker_id,
+            "envelope": env,
         }
         logger.info(json.dumps(log_entry, ensure_ascii=False))
 
