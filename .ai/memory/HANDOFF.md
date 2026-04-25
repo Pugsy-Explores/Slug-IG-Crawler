@@ -14,7 +14,7 @@
 
 ## Next task (one line)
 
-- Stage intended files and open IG PR with workflow-check output.
+- Monitor first post-merge runbook cycle on `main` and re-run `ig-workflow-check` if any parser/trace regressions appear.
 
 ## Blockers
 

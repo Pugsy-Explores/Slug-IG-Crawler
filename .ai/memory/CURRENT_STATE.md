@@ -1,13 +1,13 @@
 # CURRENT_STATE
 
-**Branch / release:** `main` stabilization stream  
+**Branch / release:** `main` (post-merge stabilization)  
 **Last touched:** 2026-04-25
 
 ## Active priorities (max 3)
 
-1. Prepare IG PR slice for Thor integration hardening (non-blocking guard + exit semantics + trace envelope).
-2. Keep docs/contracts and runbook references aligned with shipped behavior.
-3. Open PR with workflow-check proof attached.
+1. Monitor first post-merge workflow-check cycle and keep parser/trace contracts stable.
+2. Keep docs/contracts and runbook references aligned with merged behavior.
+3. Monitor post-merge workflow-check stability on `main`.
 
 ## Drift / parser
 
@@ -20,8 +20,8 @@
 
 ## Next tasks
 
-1. Stage intended IG integration files only (exclude local artifacts and environment files).
-2. Prepare PR description with Thor-coupled validation notes and known warnings.
+1. Run periodic `ig-workflow-check` bundle during first post-merge day and capture failures quickly.
+2. Keep `IGSCRAPER_INTERACTIVE_GUARD` behavior documented as opt-in debug mode.
 
 ## Risks
 
